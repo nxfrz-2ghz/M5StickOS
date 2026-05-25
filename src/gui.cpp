@@ -1,9 +1,11 @@
+#include "M5StickCPlus2.h"
+#include "btnC.h"
 #include "gui.h"
 
 
 void displayBigText(const String &text) {
   StickCP2.Display.startWrite();
-  StickCP2.Display.setTextFont(&fonts::FreeSansBold18pt7b);
+  StickCP2.Display.setFont(&fonts::FreeSansBold18pt7b);
   StickCP2.Display.setTextDatum(middle_center);
   StickCP2.Display.drawString(text, StickCP2.Display.width() / 2, StickCP2.Display.height() / 2);
   StickCP2.Display.endWrite();
@@ -13,7 +15,7 @@ void displayBigText(const String &text) {
 void displayText(const String &text) {
     StickCP2.Display.startWrite();
     StickCP2.Display.fillScreen(BLACK);
-    StickCP2.Display.setTextFont(&fonts::FreeSansBold12pt7b);
+    StickCP2.Display.setFont(&fonts::FreeSansBold12pt7b);
     StickCP2.Display.setCursor(5, 10);
     StickCP2.Display.print(text);
     StickCP2.Display.endWrite();

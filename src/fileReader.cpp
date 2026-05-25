@@ -1,4 +1,7 @@
-#include "file_reader.h"
+#include "M5StickCPlus2.h"
+#include <LittleFS.h>
+#include "gui.h"
+#include "fileReader.h"
 
 static String fileContent = "";
 static std::vector<String> lines;
@@ -9,7 +12,7 @@ static int maxScroll = 0;
 static const int linesPerPage = 5;
 static const int charsPerLine = 18;
 
-void splitLines(const String &text) {
+static void splitLines(const String &text) {
     lines.clear();
     String temp = "";
 
@@ -40,7 +43,7 @@ void splitLines(const String &text) {
 
 
 
-void renderPage() {
+static void renderPage() {
     String output = "";
     int endLine = currentLine + linesPerPage;
 

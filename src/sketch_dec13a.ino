@@ -1,26 +1,27 @@
 #include "M5StickCPlus2.h"
 #include "btnC.h"
 #include "gui.h"
-#include "activity_check.h"
-#include "print_time.h"
-#include "print_battery.h"
-#include "tvbgone.h"
-#include "web_server.h"
-#include "file_manager.h"
+#include "activityCheck.h"
+#include "printTime.h"
+#include "printBattery.h"
+#include "tvbGone.h"
+#include "server.h"
+#include "fileManager.h"
+#include "preferences.h"
+#include "SubwaySurfers.h"
 
 
 void setup() {
   auto cfg = M5.config();
-  Serial.begin(9600);
+  Serial.begin(115200);
   StickCP2.begin(cfg);
 
-  pinMode(35, INPUT_PULLUP);
   pinMode(LED, OUTPUT);
-  pinMode(TRIGGER, INPUT_PULLUP);
 
   StickCP2.Display.setRotation(3);
 
   update_activity();
+  pref_init();
 }
 
 
@@ -31,6 +32,7 @@ String appList[] = {
   "files",
   "webserver",
   "tvbgone",
+  "SubwaySurf",
 };
 int selectedIndex = 0;
 const int appCount = sizeof(appList) / sizeof(appList[0]);
@@ -77,12 +79,25 @@ void handleLauncher() {
       }
     }
   }
+  else if (appList[selectedIndex] == "SubwaySurf") {
+    if (isAppRunning){loopSurfGame();}
+    else{
+      displayBigText("< RUN >");
+      if (StickCP2.BtnA.wasPressed()) {
+        StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+        displayBigText("work...");
+        setupSurfGame();
+        update_activity();
+        isAppRunning = true;
+      }
+    }
+  }
 }
 
 
 void displayAppName(const String &name) {
   StickCP2.Display.startWrite();
-  StickCP2.Display.setTextFont(&fonts::FreeSansBold9pt7b);
+  StickCP2.Display.setFont(&fonts::FreeSansBold9pt7b);
   StickCP2.Display.setTextDatum(top_center);
   StickCP2.Display.setCursor(StickCP2.Display.width() / 4, 5);
   StickCP2.Display.printf("%s", name.c_str());

@@ -1,4 +1,12 @@
-#include "web_server.h"
+#include "M5StickCPlus2.h"
+#include <LittleFS.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include "preferences.h"
+#include "gui.h"
+#include <esp_sntp.h>
+#include "server.h"
+#include "tvbGone.h"
 
 // --- Defaults ---
 #define CFG_FILE "/server.cfg"
@@ -20,40 +28,31 @@ bool   cfg_mode      = DEFAULT_MODE;   // current active mode
 // ─────────────────────────────────────────
 //  Config persistence
 // ─────────────────────────────────────────
+
 void loadConfig() {
-    File f = LittleFS.open(CFG_FILE, FILE_READ);
-    if (!f) return;
+    // Читаем все параметры из NVS. 
+    // Если параметр еще ни разу не сохранялся, запишется дефолтное значение из правого аргумента.
+    cfg_ap_ssid  = pref_get("ap_ssid",  "M5Stick_AP"); 
+    cfg_ap_pass  = pref_get("ap_pass",  "12345678");
+    cfg_sta_ssid = pref_get("sta_ssid", ""); 
+    cfg_sta_pass = pref_get("sta_pass", "");
+    cfg_mode     = pref_get("mode",     0);
 
-    // Format: one "key=value\n" per line
-    while (f.available()) {
-        String line = f.readStringUntil('\n');
-        line.trim();
-        int sep = line.indexOf('=');
-        if (sep < 0) continue;
-        String key = line.substring(0, sep);
-        String val = line.substring(sep + 1);
-
-        if (key == "ap_ssid")  cfg_ap_ssid  = val;
-        else if (key == "ap_pass")  cfg_ap_pass  = val;
-        else if (key == "sta_ssid") cfg_sta_ssid = val;
-        else if (key == "sta_pass") cfg_sta_pass = val;
-        else if (key == "mode")     cfg_mode     = val.toInt();
-    }
-    f.close();
-    Serial.println("Config loaded.");
+    Serial.println(">>> All config loaded from Preferences:");
+    Serial.printf("  Mode: %d\n  AP SSID: %s\n  STA SSID: %s\n", cfg_mode, cfg_ap_ssid.c_str(), cfg_sta_ssid.c_str());
 }
 
 void saveConfig() {
-    File f = LittleFS.open(CFG_FILE, FILE_WRITE);
-    if (!f) { Serial.println("Failed to write config"); return; }
-    f.printf("ap_ssid=%s\n",  cfg_ap_ssid.c_str());
-    f.printf("ap_pass=%s\n",  cfg_ap_pass.c_str());
-    f.printf("sta_ssid=%s\n", cfg_sta_ssid.c_str());
-    f.printf("sta_pass=%s\n", cfg_sta_pass.c_str());
-    f.printf("mode=%d\n",     cfg_mode);
-    f.close();
-    Serial.println("Config saved.");
+    // Благодаря встроенной в менеджер защите, физически запишутся только измененные поля!
+    pref_set("ap_ssid",  cfg_ap_ssid);
+    pref_set("ap_pass",  cfg_ap_pass);
+    pref_set("sta_ssid", cfg_sta_ssid);
+    pref_set("sta_pass", cfg_sta_pass);
+    pref_set("mode",     cfg_mode);
+
+    Serial.println(">>> Config smart-save completed.");
 }
+
 
 // ─────────────────────────────────────────
 //  Network startup
@@ -69,31 +68,35 @@ void startAP() {
 bool startSTA() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(cfg_sta_ssid.c_str(), cfg_sta_pass.c_str());
-
-    Serial.print("Connecting to ");
-    Serial.print(cfg_sta_ssid);
-    for (int i = 0; i < 20; i++) {   // 10-second timeout
+    for (int i = 0; i < 20; i++) {
         if (WiFi.status() == WL_CONNECTED) break;
-        delay(500);
-        Serial.print('.');
+        delay(500); Serial.print('.');
     }
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nSTA connect failed, falling back to AP");
-        return false;
-    }
-    Serial.print("\nSTA IP: ");
-    Serial.println(WiFi.localIP());
+    if (WiFi.status() != WL_CONNECTED) return false;
 
-    // Sync time via NTP
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    Serial.print("Syncing NTP");
-    struct tm ti;
+    configTime(0, 0, "pool.ntp.org");  // UTC
+    struct tm timeinfo;
     for (int i = 0; i < 20; i++) {
         delay(500);
-        if (getLocalTime(&ti)) { Serial.println(" OK"); break; }
-        Serial.print('.');
-    }
+        if (getLocalTime(&timeinfo)) {
+            m5::rtc_date_t date;
+            date.year  = timeinfo.tm_year + 1900;
+            date.month = timeinfo.tm_mon + 1;
+            date.date  = timeinfo.tm_mday;
 
+            m5::rtc_time_t time;
+            time.hours   = timeinfo.tm_hour;
+            time.minutes = timeinfo.tm_min;
+            time.seconds = timeinfo.tm_sec;
+
+            StickCP2.Rtc.setDate(date);
+            StickCP2.Rtc.setTime(time);
+            Serial.printf("NTP→RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+                date.year, date.month, date.date,
+                time.hours, time.minutes, time.seconds);
+            break;
+        }
+    }
     displayText("Mode: STA\n" + cfg_sta_ssid + "\nIP: " + WiFi.localIP().toString());
     return true;
 }
@@ -102,13 +105,12 @@ bool startSTA() {
 //  Helper: current date string YYYY-MM-DD
 // ─────────────────────────────────────────
 String currentDateString() {
-    struct tm ti;
-    if (getLocalTime(&ti)) {
-        char buf[16];
-        strftime(buf, sizeof(buf), "%Y-%m-%d", &ti);
-        return String(buf);
-    }
-    return "nodate";
+    auto dt = StickCP2.Rtc.getDateTime();
+    if (dt.date.year < 2020) return "nodate";
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+        dt.date.year, dt.date.month, dt.date.date);
+    return String(buf);
 }
 
 // ─────────────────────────────────────────
@@ -163,7 +165,15 @@ void handleRoot() {
 
     html += (cfg_mode == 0 ? "mode-ap\">AP" : "mode-sta\">STA");
     html += R"=====("</span></h1>
-    <p style="margin:0;font-size:13px;color:#888">Текущее время устройства: <span id="devtime">—</span></p>
+    <p style="margin:4px 0 0;font-size:13px;color:#888">
+    Время: <span id="devtime">—</span>
+    </p>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+    <button class="btn-save" id="sync-btn"
+          style="width:auto;padding:8px 18px;font-size:13px"
+          onclick="syncTime()">⏱ Синхронизировать время</button>
+    <span class="status" id="sync-status">Нажмите для синхронизации</span>
+    </div>
   </div>
 
   <!-- ── Save file ── -->
@@ -221,55 +231,120 @@ void handleRoot() {
 </div>
 
 <script>
-  // ── Auto-sync browser time to device ──
+  let timeSynced = false;
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  function browserTs(){
+    const n = new Date();
+    return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())} `+
+           `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+  }
+  function browserDate(){
+    const n = new Date();
+    return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`;
+  }
+
+  let displayedTime = '—';
+  let lastFetch = 0;
+
+  function tickClock(){
+    const status = document.getElementById('sync-status');
+    if (timeSynced) {
+      // Инкрементируем локально каждую секунду между опросами ESP
+      displayedTime = displayedTime; // обновляется из fetchEspTime
+      document.getElementById('devtime').textContent = displayedTime + ' ✓';
+    } else {
+      document.getElementById('devtime').textContent = 'не синхронизировано';
+    }
+  }
+
+  function fetchEspTime(){
+    fetch('/getTime')
+      .then(r => r.text())
+      .then(t => {
+        if (t === 'unsynced') {
+          timeSynced = false;
+          document.getElementById('devtime').textContent = 'не синхронизировано';
+        } else {
+          timeSynced = true;
+          displayedTime = t;
+          document.getElementById('devtime').textContent = t + ' ✓';
+          const fn = document.getElementById('fn');
+          if (!fn.dataset.edited) fn.value = t.substring(0, 10);
+        }
+      })
+      .catch(() => {
+        document.getElementById('devtime').textContent = 'ошибка чтения';
+      });
+  }
+
+  fetchEspTime();
+  setInterval(fetchEspTime, 5000);
+
   function syncTime(){
-    const now=new Date();
-    const pad=n=>String(n).padStart(2,'0');
-    const ts=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} `+
-             `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    document.getElementById('devtime').textContent=ts;
+    const btn = document.getElementById('sync-btn');
+    const status = document.getElementById('sync-status');
+    btn.disabled = true;
+    status.textContent = 'Отправка…';
+    status.style.color = '#888';
 
-    fetch('/setTime?ts='+encodeURIComponent(ts)).catch(()=>{});
+    const now = new Date();
+    const localEpoch = Math.floor(now.getTime() / 1000) - (now.getTimezoneOffset() * 60);
 
-    // Also keep filename up to date with today's date
-    const datePart=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    const fn=document.getElementById('fn');
-    // Only auto-update if user hasn't manually changed it
-    if(!fn.dataset.edited) fn.value=datePart;
+    const params = new URLSearchParams();
+    params.append('epoch', localEpoch.toString());
+
+    fetch('/setTime', { method: 'POST', body: params })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(result => {
+        timeSynced = true;
+        status.textContent = 'Синхронизировано: ' + result;
+        status.style.color = '#28a745';
+        fetchEspTime();
+      })
+      .catch(e => {
+        status.textContent = 'Ошибка: ' + e;
+        status.style.color = '#dc3545';
+      })
+      .finally(() => { btn.disabled = false; });
   }
-  document.getElementById('fn').addEventListener('input',function(){this.dataset.edited='1'});
-  syncTime();
-  setInterval(syncTime,10000);
 
-  // ── Save file ──
+  document.getElementById('fn').addEventListener('input', function(){ this.dataset.edited='1'; });
+
   function saveFile(){
-    const p=new URLSearchParams();
-    p.append('filename',document.getElementById('fn').value);
-    p.append('text',document.getElementById('t').value);
-    document.getElementById('save-status').textContent='Сохранение…';
+    const p = new URLSearchParams();
+    p.append('filename', document.getElementById('fn').value);
+    p.append('text', document.getElementById('t').value);
+    const st = document.getElementById('save-status');
+    st.textContent = 'Сохранение…';
     fetch('/setText',{method:'POST',body:p})
-      .then(r=>r.text())
-      .then(m=>{document.getElementById('save-status').textContent=m})
-      .catch(e=>{document.getElementById('save-status').textContent='Ошибка: '+e});
+      .then(r=>r.text()).then(m=>{st.textContent=m;})
+      .catch(e=>{st.textContent='Ошибка: '+e;});
   }
 
-  // ── Save config ──
   function saveConfig(){
-    const p=new URLSearchParams();
+    const p = new URLSearchParams();
     p.append('ap_ssid', document.getElementById('ap_ssid').value);
-    p.append('ap_pass', document.getElementById('ap_pass').value);
-    p.append('sta_ssid',document.getElementById('sta_ssid').value);
-    p.append('sta_pass',document.getElementById('sta_pass').value);
-    document.getElementById('cfg-status').textContent='Сохранение…';
+    p.append('ap_pass',  document.getElementById('ap_pass').value);
+    p.append('sta_ssid', document.getElementById('sta_ssid').value);
+    p.append('sta_pass', document.getElementById('sta_pass').value);
+    const st = document.getElementById('cfg-status');
+    st.textContent = 'Сохранение…';
     fetch('/saveConfig',{method:'POST',body:p})
-      .then(r=>r.text())
-      .then(m=>{document.getElementById('cfg-status').textContent=m})
-      .catch(e=>{document.getElementById('cfg-status').textContent='Ошибка: '+e});
+      .then(r=>r.text()).then(m=>{st.textContent=m;})
+      .catch(e=>{st.textContent='Ошибка: '+e;});
   }
 </script>
 </body>
 </html>)=====";
 
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "0");
     server.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -292,25 +367,61 @@ void handleSetText() {
 }
 
 void handleSetTime() {
-    // Browser sends ?ts=YYYY-MM-DD HH:MM:SS
-    if (!server.hasArg("ts")) { server.send(400, "text/plain", "Missing ts"); return; }
-    String ts = server.arg("ts");  // "2024-06-15 14:32:00"
-
-    struct tm ti = {};
-    // Parse manually (no sscanf in some builds)
-    ti.tm_year = ts.substring(0,4).toInt() - 1900;
-    ti.tm_mon  = ts.substring(5,7).toInt() - 1;
-    ti.tm_mday = ts.substring(8,10).toInt();
-    ti.tm_hour = ts.substring(11,13).toInt();
-    ti.tm_min  = ts.substring(14,16).toInt();
-    ti.tm_sec  = ts.substring(17,19).toInt();
-
-    time_t t = mktime(&ti);
-    if (t != -1) {
-        struct timeval tv = { t, 0 };
-        settimeofday(&tv, nullptr);
+    if (!server.hasArg("epoch")) {
+        server.send(400, "text/plain", "Missing epoch");
+        return;
     }
-    server.send(200, "text/plain", "OK");
+
+    unsigned long epoch = server.arg("epoch").toInt();
+    if (epoch < 1000000000UL) {
+        server.send(400, "text/plain", "Bad epoch: " + server.arg("epoch"));
+        return;
+    }
+
+    // Конвертируем epoch в struct tm
+    time_t t = (time_t)epoch;
+    struct tm *ti = gmtime(&t);  // UTC → tm
+
+    // Записываем в аппаратный RTC M5StickCP2
+    m5::rtc_date_t date;
+    date.year  = ti->tm_year + 1900;
+    date.month = ti->tm_mon + 1;
+    date.date  = ti->tm_mday;
+
+    m5::rtc_time_t time;
+    time.hours   = ti->tm_hour;
+    time.minutes = ti->tm_min;
+    time.seconds = ti->tm_sec;
+
+    StickCP2.Rtc.setDate(date);
+    StickCP2.Rtc.setTime(time);
+
+    // Читаем обратно для проверки
+    auto dt = StickCP2.Rtc.getDateTime();
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+        dt.date.year, dt.date.month, dt.date.date,
+        dt.time.hours, dt.time.minutes, dt.time.seconds);
+
+    Serial.printf("RTC set: %s\n", buf);
+    server.send(200, "text/plain", String(buf));
+}
+
+void handleGetTime() {
+    auto dt = StickCP2.Rtc.getDateTime();
+
+    // Проверка: если год < 2020 — RTC не установлен
+    if (dt.date.year < 2020) {
+        server.send(200, "text/plain", "unsynced");
+        return;
+    }
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+        dt.date.year, dt.date.month, dt.date.date,
+        dt.time.hours, dt.time.minutes, dt.time.seconds);
+
+    server.send(200, "text/plain", String(buf));
 }
 
 void handleSaveConfig() {
@@ -346,12 +457,14 @@ void initWebServer() {
     }
     if (!staOk) {
         cfg_mode = 0;
+        saveConfig();
         startAP();
     }
 
     server.on("/",           handleRoot);
     server.on("/setText",    handleSetText);
     server.on("/setTime",    handleSetTime);
+    server.on("/getTime", handleGetTime);
     server.on("/saveConfig", handleSaveConfig);
     server.onNotFound([]() { server.send(404, "text/plain", "Not Found"); });
 

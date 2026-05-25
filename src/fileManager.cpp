@@ -1,4 +1,10 @@
-#include "file_manager.h"
+#include "M5StickCPlus2.h"
+#include <LittleFS.h>
+#include <vector>
+#include "gui.h"
+#include "btnC.h"
+#include "fileReader.h"
+#include "fileManager.h"
 
 static String currentPath = "/";
 static std::vector<String> filesList;
@@ -12,7 +18,7 @@ static int selectedIndex = 0;
 static int optionIndex = 0;
 
 
-void updateFilesArray(String path) {
+static void updateFilesArray(String path) {
     filesList.clear();
     File root = LittleFS.open(path);
     if (!root || !root.isDirectory()) return;
@@ -24,7 +30,7 @@ void updateFilesArray(String path) {
     }
 }
 
-void displayUI() {
+static void displayUI() {
     if (currentState == LIST) {
         // Используем твою новую функцию и для основного списка тоже!
         displayList("--- Files ---", filesList, selectedIndex);
@@ -34,7 +40,7 @@ void displayUI() {
     }
 }
 
-void handleAction() {
+static void handleAction() {
     if (optionIndex == 0) { // Открыть
         openTextFile(filesList[selectedIndex]);
         currentState = READER;
