@@ -2,7 +2,6 @@
 #include <LittleFS.h>
 #include <vector>
 #include "gui.h"
-#include "btnC.h"
 #include "fileReader.h"
 #include "fileManager.h"
 
@@ -88,7 +87,7 @@ void loopFileManager() {
     if (currentState == LIST && !filesList.empty()){
         int lastIndex = selectedIndex;
 
-        if (BtnC_wasPressed() && lastIndex == 0){
+        if (StickCP2.BtnPWR.wasPressed() && lastIndex == 0){
             ESP.restart();
         }
 

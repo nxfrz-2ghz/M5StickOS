@@ -1,7 +1,7 @@
 #include "M5StickCPlus2.h"
 #include "printTime.h"
 
-void print_time(bool big) {
+void printTime(bool big) {
     auto dt = StickCP2.Rtc.getDateTime();
     StickCP2.Display.startWrite();
     

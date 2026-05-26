@@ -1,5 +1,4 @@
 #include "M5StickCPlus2.h"
-#include "btnC.h"
 #include "gui.h"
 #include "activityCheck.h"
 #include "printTime.h"
@@ -16,12 +15,12 @@ void setup() {
   Serial.begin(115200);
   StickCP2.begin(cfg);
 
+  pinMode(35, INPUT_PULLUP);
   pinMode(LED, OUTPUT);
 
   StickCP2.Display.setRotation(3);
 
   update_activity();
-  pref_init();
 }
 
 
@@ -42,7 +41,7 @@ void handleLauncher() {
 
   // Launcher
   if (appList[selectedIndex] == "home") {
-    print_time(true);
+    printTime(true);
   }
   else if (appList[selectedIndex] == "tvbgone") {
     displayBigText("< READY >");
@@ -106,21 +105,20 @@ void displayAppName(const String &name) {
 
 
 void displayDockPanel() {
-  print_time(false);
+  printTime(false);
   displayAppName(appList[selectedIndex]);
-  print_battery();
+  printBattery();
 
-  draw_idle_timer_bar();
+  drawIdleTimerBar();
 }
 
 
 void loop() {
-  StickCP2.update(); // Опрос кнопок
-  updateBtnC();
-
+  StickCP2.update();
+  
   handleLauncher();
   if (isAppRunning){return;}
-
+  
   selectedIndex = updateMenuSelection(selectedIndex, appCount);
   displayDockPanel();
   activity_check();

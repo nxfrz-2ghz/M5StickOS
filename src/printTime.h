@@ -1,3 +1,3 @@
 #pragma once
 
-void print_time(bool big);
+void printTime(bool big);

@@ -1,5 +1,5 @@
 #pragma once
 
-void draw_idle_timer_bar();
+void drawIdleTimerBar();
 void update_activity();
 void activity_check();

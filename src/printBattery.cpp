@@ -1,7 +1,7 @@
 #include "M5StickCPlus2.h"
 #include "printBattery.h"
 
-void print_battery() {
+void printBattery() {
     uint16_t mv = StickCP2.Power.getBatteryVoltage();
 
     int scrW = StickCP2.Display.width();

@@ -1,5 +1,4 @@
 #include "M5StickCPlus2.h"
-#include "btnC.h"
 #include "activityCheck.h"
 
 #define timeout 5000 // 5 секунд
@@ -8,7 +7,7 @@ unsigned long lastActivityTime = 0;
 
 int lastBarWidth = -1; // Глобальная или static переменная
 
-void draw_idle_timer_bar() {
+void drawIdleTimerBar() {
   unsigned long elapsed = millis() - lastActivityTime;
   float progress = 1.0 - (float)elapsed / timeout;
   if (progress < 0.0) progress = 0.0;
@@ -41,7 +40,7 @@ void update_activity() {
 
 void activity_check() {
   // Если нажата любая кнопка, обновляем время активности
-  if (StickCP2.BtnA.wasPressed() || StickCP2.BtnB.wasPressed() || BtnC_wasPressed()) {
+  if (StickCP2.BtnA.wasPressed() || StickCP2.BtnB.wasPressed() || StickCP2.BtnPWR.wasPressed()) {
     update_activity();
   }
 

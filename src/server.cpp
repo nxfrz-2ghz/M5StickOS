@@ -2,7 +2,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include "preferences.h"
+#include "prefs.h"
 #include "gui.h"
 #include <esp_sntp.h>
 #include "server.h"
@@ -30,33 +30,25 @@ bool   cfg_mode      = DEFAULT_MODE;   // current active mode
 // ─────────────────────────────────────────
 
 void loadConfig() {
-    // Читаем все параметры из NVS. 
-    // Если параметр еще ни разу не сохранялся, запишется дефолтное значение из правого аргумента.
-    cfg_ap_ssid  = pref_get("ap_ssid",  "M5Stick_AP"); 
-    cfg_ap_pass  = pref_get("ap_pass",  "12345678");
-    cfg_sta_ssid = pref_get("sta_ssid", ""); 
-    cfg_sta_pass = pref_get("sta_pass", "");
-    cfg_mode     = pref_get("mode",     0);
-
-    Serial.println(">>> All config loaded from Preferences:");
-    Serial.printf("  Mode: %d\n  AP SSID: %s\n  STA SSID: %s\n", cfg_mode, cfg_ap_ssid.c_str(), cfg_sta_ssid.c_str());
+    cfg_ap_ssid  = prefGetString("ap_ssid",  "M5Stick_AP"); 
+    cfg_ap_pass  = prefGetString("ap_pass",  "12345678");
+    cfg_sta_ssid = prefGetString("sta_ssid", ""); 
+    cfg_sta_pass = prefGetString("sta_pass", "");
+    cfg_mode     = prefGetBool("mode", false);
 }
 
 void saveConfig() {
-    // Благодаря встроенной в менеджер защите, физически запишутся только измененные поля!
-    pref_set("ap_ssid",  cfg_ap_ssid);
-    pref_set("ap_pass",  cfg_ap_pass);
-    pref_set("sta_ssid", cfg_sta_ssid);
-    pref_set("sta_pass", cfg_sta_pass);
-    pref_set("mode",     cfg_mode);
-
-    Serial.println(">>> Config smart-save completed.");
+    prefSetString("ap_ssid",  cfg_ap_ssid);
+    prefSetString("ap_pass",  cfg_ap_pass);
+    prefSetString("sta_ssid", cfg_sta_ssid);
+    prefSetString("sta_pass", cfg_sta_pass);
+    prefSetBool("mode",     cfg_mode);
 }
-
 
 // ─────────────────────────────────────────
 //  Network startup
 // ─────────────────────────────────────────
+
 void startAP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(cfg_ap_ssid.c_str(), cfg_ap_pass.c_str());
@@ -104,6 +96,7 @@ bool startSTA() {
 // ─────────────────────────────────────────
 //  Helper: current date string YYYY-MM-DD
 // ─────────────────────────────────────────
+
 String currentDateString() {
     auto dt = StickCP2.Rtc.getDateTime();
     if (dt.date.year < 2020) return "nodate";
@@ -116,6 +109,7 @@ String currentDateString() {
 // ─────────────────────────────────────────
 //  File save
 // ─────────────────────────────────────────
+
 void saveTextToFile(const String &filename, const String &text) {
     String path = filename.startsWith("/") ? filename : "/" + filename;
     File file = LittleFS.open(path, FILE_WRITE);

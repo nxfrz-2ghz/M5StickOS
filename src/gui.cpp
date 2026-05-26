@@ -1,5 +1,4 @@
 #include "M5StickCPlus2.h"
-#include "btnC.h"
 #include "gui.h"
 
 
@@ -52,7 +51,7 @@ int updateMenuSelection(int index, const int max) {
     }
   }
   // Previous
-  if (BtnC_wasPressed()) {
+  if (StickCP2.BtnPWR.wasPressed()) {
     index = index - 1;
     if (index < 0) {
       index = 0;
