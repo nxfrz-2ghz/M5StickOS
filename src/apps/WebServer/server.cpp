@@ -2,11 +2,10 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include "prefs.h"
-#include "gui.h"
+#include "../../libs/prefs.h"
+#include "../../libs/gui/gui.h"
 #include <esp_sntp.h>
 #include "server.h"
-#include "tvbGone.h"
 
 // --- Defaults ---
 #define CFG_FILE "/server.cfg"
@@ -19,17 +18,18 @@
 WebServer server(80);
 
 // --- Runtime config ---
-String cfg_ap_ssid   = DEFAULT_AP_SSID;
-String cfg_ap_pass   = DEFAULT_AP_PASS;
-String cfg_sta_ssid  = DEFAULT_STA_SSID;
-String cfg_sta_pass  = DEFAULT_STA_PASS;
-bool   cfg_mode      = DEFAULT_MODE;   // current active mode
+
+static String cfg_ap_ssid   = DEFAULT_AP_SSID;
+static String cfg_ap_pass   = DEFAULT_AP_PASS;
+static String cfg_sta_ssid  = DEFAULT_STA_SSID;
+static String cfg_sta_pass  = DEFAULT_STA_PASS;
+static bool   cfg_mode      = DEFAULT_MODE;   // current active mode
 
 // ─────────────────────────────────────────
 //  Config persistence
 // ─────────────────────────────────────────
 
-void loadConfig() {
+static void loadConfig() {
     cfg_ap_ssid  = prefGetString("ap_ssid",  "M5Stick_AP"); 
     cfg_ap_pass  = prefGetString("ap_pass",  "12345678");
     cfg_sta_ssid = prefGetString("sta_ssid", ""); 
@@ -37,7 +37,7 @@ void loadConfig() {
     cfg_mode     = prefGetBool("mode", false);
 }
 
-void saveConfig() {
+static void saveConfig() {
     prefSetString("ap_ssid",  cfg_ap_ssid);
     prefSetString("ap_pass",  cfg_ap_pass);
     prefSetString("sta_ssid", cfg_sta_ssid);
@@ -49,15 +49,15 @@ void saveConfig() {
 //  Network startup
 // ─────────────────────────────────────────
 
-void startAP() {
+static void startAP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(cfg_ap_ssid.c_str(), cfg_ap_pass.c_str());
     Serial.print("AP IP: ");
     Serial.println(WiFi.softAPIP());
-    displayText("Mode: AP\n" + cfg_ap_ssid + "\nIP: " + WiFi.softAPIP().toString());
+    displayText(("Mode: AP\n" + cfg_ap_ssid + "\nIP: " + WiFi.softAPIP().toString()).c_str());
 }
 
-bool startSTA() {
+static bool startSTA() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(cfg_sta_ssid.c_str(), cfg_sta_pass.c_str());
     for (int i = 0; i < 20; i++) {
@@ -89,15 +89,25 @@ bool startSTA() {
             break;
         }
     }
-    displayText("Mode: STA\n" + cfg_sta_ssid + "\nIP: " + WiFi.localIP().toString());
+    displayText(("Mode: STA\n" + cfg_sta_ssid + "\nIP: " + WiFi.localIP().toString()).c_str());
     return true;
+}
+
+static void stopNetwork() {
+    server.stop();
+
+    WiFi.disconnect(true, true); // отключить STA и удалить настройки подключения
+    WiFi.softAPdisconnect(true); // выключить AP
+
+    WiFi.mode(WIFI_OFF);         // полностью выключить Wi-Fi
+    delay(200);
 }
 
 // ─────────────────────────────────────────
 //  Helper: current date string YYYY-MM-DD
 // ─────────────────────────────────────────
 
-String currentDateString() {
+static String currentDateString() {
     auto dt = StickCP2.Rtc.getDateTime();
     if (dt.date.year < 2020) return "nodate";
     char buf[16];
@@ -110,7 +120,7 @@ String currentDateString() {
 //  File save
 // ─────────────────────────────────────────
 
-void saveTextToFile(const String &filename, const String &text) {
+static void saveTextToFile(const String &filename, const String &text) {
     String path = filename.startsWith("/") ? filename : "/" + filename;
     File file = LittleFS.open(path, FILE_WRITE);
     if (!file) { Serial.println("Failed to open file for writing"); return; }
@@ -119,10 +129,89 @@ void saveTextToFile(const String &filename, const String &text) {
     Serial.printf("Saved: %s\n", path.c_str());
 }
 
+static File imageUploadFile;
+static String imageUploadResponse = "No image uploaded";
+static bool imageUploadOpen = false;
+static String imageUploadSavedName = "";
+static size_t imageUploadBytes = 0;
+static const size_t MAX_IMAGE_UPLOAD_BYTES = 2 * 1024 * 1024; // 2 MB limit
+
+static String normalizeUploadImageFilename(const String &filename) {
+    String name = filename;
+    if (name.length() == 0) {
+        name = currentDateString();
+    }
+    if (!name.startsWith("/")) {
+        name = "/" + name;
+    }
+
+    int slashPos = name.lastIndexOf('/');
+    int dotPos = name.lastIndexOf('.');
+    if (dotPos <= slashPos) {
+        name += ".bmp";
+        return name;
+    }
+
+    String ext = name.substring(dotPos);
+    ext.toLowerCase();
+    if (ext != ".bmp") {
+        name = name.substring(0, dotPos) + ".bmp";
+    }
+    return name;
+}
+
+static void handleUploadImagePost() {
+    server.send(200, "text/plain", imageUploadResponse);
+}
+
+static void handleUploadImage() {
+    HTTPUpload& upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        String filename = normalizeUploadImageFilename(upload.filename);
+        imageUploadSavedName = filename;
+
+      imageUploadBytes = 0;
+      imageUploadFile = LittleFS.open(filename, FILE_WRITE);
+      imageUploadOpen = (bool)imageUploadFile;
+      imageUploadResponse = imageUploadOpen ? String("Uploading to ") + filename : String("Failed to open ") + filename;
+      Serial.printf("Upload start: %s\n", filename.c_str());
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (imageUploadOpen) {
+        imageUploadFile.write(upload.buf, upload.currentSize);
+        imageUploadBytes += upload.currentSize;
+        if (imageUploadBytes > MAX_IMAGE_UPLOAD_BYTES) {
+          // Too large: abort and remove partial file
+          imageUploadFile.close();
+          imageUploadOpen = false;
+          LittleFS.remove(imageUploadSavedName);
+          imageUploadResponse = "Upload too large";
+          Serial.printf("Upload aborted: %s (exceeded %u bytes)\n", imageUploadSavedName.c_str(), (unsigned)MAX_IMAGE_UPLOAD_BYTES);
+        }
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (imageUploadOpen) {
+        imageUploadFile.close();
+        imageUploadOpen = false;
+        imageUploadResponse = String("Saved image as: ") + imageUploadSavedName;
+        displayText(("Image: " + imageUploadSavedName + "\nSaved!").c_str());
+        Serial.printf("Upload finished: %s (%u bytes)\n", imageUploadSavedName.c_str(), (unsigned)imageUploadBytes);
+      } else {
+        if (imageUploadResponse.length() == 0) imageUploadResponse = "Upload failed";
+      }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        if (imageUploadOpen) {
+            imageUploadFile.close();
+            imageUploadOpen = false;
+        }
+        imageUploadResponse = "Upload aborted";
+    }
+}
+
 // ─────────────────────────────────────────
 //  HTML page
 // ─────────────────────────────────────────
-void handleRoot() {
+static void handleRoot() {
     String dateStr = currentDateString();
 
     String html = R"=====(<!DOCTYPE html>
@@ -181,6 +270,15 @@ void handleRoot() {
     <textarea id="t" placeholder="Введите текст…"></textarea>
     <button class="btn-save" onclick="saveFile()">Сохранить на M5Stick</button>
     <div class="status" id="save-status"></div>
+  </div>
+
+  <!-- ── Upload image ── -->
+  <div class="card">
+    <h2>Загрузить изображение</h2>
+    <label>Выберите файл</label>
+    <input type="file" id="image-file" accept="image/*">
+    <button class="btn-save" onclick="uploadImage()">Загрузить и сжать</button>
+    <div class="status" id="upload-status"></div>
   </div>
 
   <!-- ── AP settings ── -->
@@ -309,6 +407,133 @@ void handleRoot() {
 
   document.getElementById('fn').addEventListener('input', function(){ this.dataset.edited='1'; });
 
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = reader.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function fixBmpName(name) {
+    if (!name) return 'image.bmp';
+    if (name.lastIndexOf('.') === -1) return name + '.bmp';
+    return name.replace(/\.[^.]+$/, '.bmp');
+  }
+
+  function resizeDimensions(width, height, maxSide) {
+    if (width <= maxSide && height <= maxSide) return [width, height];
+    const ratio = width > height ? maxSide / width : maxSide / height;
+    return [Math.round(width * ratio), Math.round(height * ratio)];
+  }
+
+  function canvasToBmpBlob(canvas) {
+    const width = canvas.width;
+    const height = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    const rowSize = Math.floor((24 * width + 31) / 32) * 4;
+    const pixelArraySize = rowSize * height;
+    const headerSize = 14 + 40;
+    const fileSize = headerSize + pixelArraySize;
+    const buffer = new ArrayBuffer(fileSize);
+    const view = new DataView(buffer);
+    let p = 0;
+    view.setUint8(p++, 0x42);
+    view.setUint8(p++, 0x4D);
+    view.setUint32(p, fileSize, true);
+    p += 4;
+    view.setUint16(p, 0, true);
+    p += 2;
+    view.setUint16(p, 0, true);
+    p += 2;
+    view.setUint32(p, headerSize, true);
+    p += 4;
+    view.setUint32(p, 40, true);
+    p += 4;
+    view.setInt32(p, width, true);
+    p += 4;
+    view.setInt32(p, height, true);
+    p += 4;
+    view.setUint16(p, 1, true);
+    p += 2;
+    view.setUint16(p, 24, true);
+    p += 2;
+    view.setUint32(p, 0, true);
+    p += 4;
+    view.setUint32(p, pixelArraySize, true);
+    p += 4;
+    view.setUint32(p, 2835, true);
+    p += 4;
+    view.setUint32(p, 2835, true);
+    p += 4;
+    view.setUint32(p, 0, true);
+    p += 4;
+    view.setUint32(p, 0, true);
+    p += 4;
+
+    let offset = headerSize;
+    const rowPadding = rowSize - width * 3;
+    for (let y = height - 1; y >= 0; y--) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        view.setUint8(offset++, pixels[i + 2]);
+        view.setUint8(offset++, pixels[i + 1]);
+        view.setUint8(offset++, pixels[i + 0]);
+      }
+      for (let pI = 0; pI < rowPadding; pI++) {
+        view.setUint8(offset++, 0);
+      }
+    }
+
+    return new Blob([buffer], { type: 'image/bmp' });
+  }
+
+  async function uploadImage() {
+    const input = document.getElementById('image-file');
+    const status = document.getElementById('upload-status');
+
+    if (!input.files.length) {
+      status.textContent = 'Выберите изображение сначала';
+      return;
+    }
+
+    const file = input.files[0];
+    status.textContent = 'Сжатие изображения…';
+
+    try {
+      const img = await loadImage(file);
+      // Resize large images on the client to avoid large uploads and
+      // memory pressure on the device. maxSide=800 produces smaller BMPs.
+      const [width, height] = resizeDimensions(img.width, img.height, 800);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = canvasToBmpBlob(canvas);
+      if (!blob) throw new Error('Не удалось создать BMP');
+
+      const form = new FormData();
+      form.append('image', blob, fixBmpName(file.name));
+
+      status.textContent = 'Загрузка на устройство…';
+      const resp = await fetch('/uploadImage', { method: 'POST', body: form });
+      const text = await resp.text();
+      status.textContent = resp.ok ? text : 'Ошибка: ' + text;
+    } catch (err) {
+      status.textContent = 'Ошибка: ' + err.message;
+    }
+  }
+
   function saveFile(){
     const p = new URLSearchParams();
     p.append('filename', document.getElementById('fn').value);
@@ -345,7 +570,7 @@ void handleRoot() {
 // ─────────────────────────────────────────
 //  Handlers
 // ─────────────────────────────────────────
-void handleSetText() {
+static void handleSetText() {
     if (server.method() != HTTP_POST) { server.send(405, "text/plain", "Method Not Allowed"); return; }
 
     String filename = server.arg("filename");
@@ -356,11 +581,11 @@ void handleSetText() {
         filename += ".txt";
 
     saveTextToFile(filename, text);
-    displayText("File: " + filename + "\nSaved!");
+    displayText(("File: " + filename + "\nSaved!").c_str());
     server.send(200, "text/plain", "Saved as: " + filename);
 }
 
-void handleSetTime() {
+static void handleSetTime() {
     if (!server.hasArg("epoch")) {
         server.send(400, "text/plain", "Missing epoch");
         return;
@@ -401,7 +626,7 @@ void handleSetTime() {
     server.send(200, "text/plain", String(buf));
 }
 
-void handleGetTime() {
+static void handleGetTime() {
     auto dt = StickCP2.Rtc.getDateTime();
 
     // Проверка: если год < 2020 — RTC не установлен
@@ -418,7 +643,7 @@ void handleGetTime() {
     server.send(200, "text/plain", String(buf));
 }
 
-void handleSaveConfig() {
+static void handleSaveConfig() {
     if (server.method() != HTTP_POST) { server.send(405, "text/plain", "Method Not Allowed"); return; }
 
     if (server.hasArg("ap_ssid") && server.arg("ap_ssid").length() > 0)
@@ -438,7 +663,9 @@ void handleSaveConfig() {
 // ─────────────────────────────────────────
 //  Init
 // ─────────────────────────────────────────
-void initWebServer() {
+WebServerApp webServerApp;
+
+void WebServerApp::Setup() {
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS Mount Failed");
     }
@@ -458,8 +685,9 @@ void initWebServer() {
     server.on("/",           handleRoot);
     server.on("/setText",    handleSetText);
     server.on("/setTime",    handleSetTime);
-    server.on("/getTime", handleGetTime);
-    server.on("/saveConfig", handleSaveConfig);
+    server.on("/getTime",     handleGetTime);
+    server.on("/uploadImage", HTTP_POST, handleUploadImagePost, handleUploadImage);
+    server.on("/saveConfig",  handleSaveConfig);
     server.onNotFound([]() { server.send(404, "text/plain", "Not Found"); });
 
     server.begin();
@@ -469,20 +697,40 @@ void initWebServer() {
 // ─────────────────────────────────────────
 //  Loop
 // ─────────────────────────────────────────
-void loopWebServer() {
+bool WebServerApp::Loop() {
     server.handleClient();
 
-    // BtnA: toggle AP ↔ STA and restart
     if (StickCP2.BtnA.wasPressed()) {
-        cfg_mode = (cfg_mode == 0) ? 1 : 0;
+        cfg_mode = !cfg_mode;
         saveConfig();
-        displayText("Mode -> " + String(cfg_mode == 0 ? "AP" : "STA") + "\nRestarting…");
-        delay(1500);
-        ESP.restart();
+
+        displayText(("Switching to\n" + String(cfg_mode ? "STA" : "AP")).c_str());
+
+        stopNetwork();
+
+        bool ok = false;
+
+        if (cfg_mode) {
+            ok = startSTA();
+        }
+
+        if (!ok) {
+            cfg_mode = 0;
+            saveConfig();
+            startAP();
+        }
+
+        server.begin();
+
+        Serial.println("Network restarted");
     }
 
-    // BtnB: just restart
     if (StickCP2.BtnB.wasPressed()) {
-        ESP.restart();
+      stopNetwork();
+      displayText("WiFi OFF");
+      delay(300);
+      return false;
     }
+
+    return true;
 }

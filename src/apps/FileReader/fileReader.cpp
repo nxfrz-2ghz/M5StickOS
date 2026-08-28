@@ -1,6 +1,6 @@
 #include "M5StickCPlus2.h"
 #include <LittleFS.h>
-#include "gui.h"
+#include "../../libs/gui/gui.h"
 #include "fileReader.h"
 
 static String fileContent = "";
@@ -8,9 +8,6 @@ static std::vector<String> lines;
 
 static int currentLine = 0;
 static int maxScroll = 0;
-
-static const int linesPerPage = 5;
-static const int charsPerLine = 18;
 
 static void splitLines(const String &text) {
     lines.clear();
@@ -55,7 +52,7 @@ static void renderPage() {
         output += lines[i] + "\n";
     }
 
-    displayText(output);
+    displayText(output.c_str());
 }
 
 
@@ -96,7 +93,7 @@ bool loopFileReader() {
 
     int oldLine = currentLine;
 
-    currentLine = updateMenuSelection(currentLine, maxScroll + 1);
+    currentLine = updateMenuSelectionFast(currentLine, maxScroll + 1);
 
     if (oldLine != currentLine) {
         renderPage();
