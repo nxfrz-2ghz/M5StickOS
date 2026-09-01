@@ -1,13 +1,9 @@
 #pragma once
 
-// Two regions!
-#define NA 0 //set by a HIGH on REGIONSWITCH pin
-#define EU 1 //set by a LOW on REGIONSWITCH pin
-
-// What pins do what
-#define LED 36 //LED indicator pin (built-in LED)
-#define IRLED 19        //the IR sender LED / D5 on wemos D1 mini
-//HIGH (1) = NA, LOW (0) = EU; Pin 5 / D1 (REGIONSWITCH) is HIGH (via in input pullup resistor) for North America, or you (the user) must wire it to ground to set the codes for Europe.
+// На M5StickC Plus2 ИК-светодиод и штатный красный индикаторный LED
+// подключены к одному и тому же GPIO19 (это особенность платы, отдельного
+// пина для индикатора нет) — поэтому здесь один пин на обе роли.
+#define IR_TX_PIN 19
 
 // Lets us calculate the size of the NA/EU databases
 #define NUM_ELEM(x) (sizeof (x) / sizeof (*(x)));

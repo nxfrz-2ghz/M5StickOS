@@ -8,5 +8,3 @@ public:
     bool Loop() override;
     bool AutoStart() const override { return true; }
 };
-
-extern HomeApp homeApp;

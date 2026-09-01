@@ -31,15 +31,15 @@ void drawIdleTimerBar() {
 }
 
 
-void update_activity() {
+void updateActivity() {
   lastActivityTime = millis();
 }
 
 
-void activity_check() {
+void activityCheck() {
   // Если нажата любая кнопка, обновляем время активности
   if (StickCP2.BtnA.wasPressed() || StickCP2.BtnB.wasPressed() || StickCP2.BtnPWR.wasPressed()) {
-    update_activity();
+    updateActivity();
   }
 
   // Проверка таймера бездействия

@@ -1,53 +1,7 @@
 #include <M5StickCPlus2.h>
 #include "World3D.h"
 
-struct rgbColor{
-  int r;
-  int g;
-  int b;
-};
-
-typedef struct{
-  int x;
-  int y;
-  uint16_t color;
-  rgbColor rgb;
-} obst;
-
-
-struct isObs{
-  bool status;
-  obst infos;
-};
-
-
-struct hblock {
-  int      distance;
-  int      beginWall;
-  int      beginGrass;
-  uint16_t color; 
-};
-
-
-struct g_map{
-  uint16_t W;
-  uint16_t H;
-  int mapW = 55;
-  int mapH = 55;
-  int directionDegree = 30;
-  int maxDegreeLine   = 60;
-  int maxDistanceLine = 20;
-  int blockSize = 5;
-  hblock historyBlocks[380];
-  obst player = { 30, 5, 0, {0,0,0} };
-  int nbObstacles = 0;
-  obst* obstacles;
-  bool _3DInit = false;
-};
-
-g_map game;
-
-static obst mapObstacle[5] = {
+static World3DApp::Obst mapObstacle[5] = {
   { 10, 10, 0, {0,0,0} },
   { 40, 10, 0, {0,0,0} },
   { 25, 25, 0, {0,0,0} },
@@ -55,13 +9,12 @@ static obst mapObstacle[5] = {
   { 40, 40, 0, {0,0,0} }
 };
 
+static const World3DApp::RgbColor __BLACK_RGB_COLOR__   = { 0,   0,   0 };
+static const World3DApp::RgbColor __WALL_RGB_COLOR__    = { 128, 128, 128 };
+static const World3DApp::RgbColor __SKY_RGB_COLOR__     = { 65,  105, 225 };
+static const World3DApp::RgbColor __GRASS_RGB_COLOR__   = { 85,  107, 47 };
 
-static rgbColor __BLACK_RGB_COLOR__   = { 0,   0,   0 };
-static rgbColor __WALL_RGB_COLOR__    = { 128, 128, 128 };
-static rgbColor __SKY_RGB_COLOR__     = { 65,  105, 225 };
-static rgbColor __GRASS_RGB_COLOR__   = { 85,  107, 47 };
-
-static void addObstacleMap(){
+void World3DApp::addObstacleMap(){
   bool corner = false;
   for (int i = 1; i <= game.mapH && game.nbObstacles<=7000; i++){
       for (int j = 0; j <= game.mapW; j++){
@@ -79,21 +32,20 @@ static void addObstacleMap(){
     for (int _h=0; _h<=game.blockSize; _h++){
       for (int _w=0; _w<=game.blockSize; _w++){
         corner = ((_h == 0  && _w == 0) || (_h == game.blockSize && _w == 0)  ||
-                  (_h == 0  && _w == game.blockSize) ||  (_h == game.blockSize && _w == game.blockSize)); 
+                  (_h == 0  && _w == game.blockSize) ||  (_h == game.blockSize && _w == game.blockSize));
         game.obstacles[game.nbObstacles].x = mapObstacle[_b].x + _w;
         game.obstacles[game.nbObstacles].y = mapObstacle[_b].y + _h;
         game.obstacles[game.nbObstacles].color = corner ? BLACK : TFT_DARKGREY;
         game.obstacles[game.nbObstacles].rgb = corner == false ? __WALL_RGB_COLOR__ : __BLACK_RGB_COLOR__;
-        game.nbObstacles++;   
-      } 
+        game.nbObstacles++;
+      }
     }
   }
 }
 
-
-static isObs isObstacle(int x, int y){
-  obst  emptyObst;
-  isObs res  = { false, emptyObst };
+World3DApp::IsObs World3DApp::isObstacle(int x, int y) const {
+  Obst emptyObst{};
+  IsObs res  = { false, emptyObst };
   for (int i = 0; i<=game.nbObstacles; i++){
     if ((x == game.obstacles[i].x && y == game.obstacles[i].y) ||
         x < 0 || x > game.mapW || y <= 0 || y >= game.mapH ){
@@ -105,8 +57,8 @@ static isObs isObstacle(int x, int y){
   return res;
 }
 
-static obst getCoord(int x, int y, int dist, float degree) {
-  obst o;
+World3DApp::Obst World3DApp::getCoord(int x, int y, int dist, float degree) const {
+  Obst o;
   o.x = x + dist * cos(3.14 * degree / 180);
   o.y = y + dist * sin(3.14 * degree / 180);
   o.color = 0;
@@ -114,10 +66,9 @@ static obst getCoord(int x, int y, int dist, float degree) {
   return o;
 }
 
-static void drawLine(uint16_t color){
-  int nx, ny;
-  obst tmpCoord;
-  isObs res;
+void World3DApp::drawLine(uint16_t color){
+  Obst tmpCoord;
+  IsObs res;
 
   for (int degree = game.directionDegree; degree <= game.directionDegree + game.maxDegreeLine; degree++){
     for (int distance = 0; distance<=game.maxDistanceLine; distance++){
@@ -127,12 +78,11 @@ static void drawLine(uint16_t color){
           continue;
         }
         StickCP2.Display.drawPixel(tmpCoord.x, tmpCoord.y, color);
-     }    
+     }
   }
 }
 
-static uint16_t getColorFromDistance(rgbColor _rgbcolor, int distance, int maxDistance, int coef) {
-
+uint16_t World3DApp::getColorFromDistance(RgbColor _rgbcolor, int distance, int maxDistance, int coef) {
   int r,g,b, ratio = ( distance) * coef / maxDistance;
   uint16_t _r, _g, _b;
 
@@ -146,20 +96,19 @@ static uint16_t getColorFromDistance(rgbColor _rgbcolor, int distance, int maxDi
     g = _rgbcolor.g - (_rgbcolor.g - ratio > 0 ? ratio : 0);
     b = _rgbcolor.b - (_rgbcolor.b - ratio > 0 ? ratio : 0);
   }
-  
+
   _r = ((r >> 3) & 0x1f) << 11;
   _g = ((g >> 2) & 0x3f) << 5;
   _b = (b >> 3)  & 0x1f;
 
     return (uint16_t) (_r | _g | _b);
-};
+}
 
-static void draw3DLine(){
-  int nx, ny;
-  obst tmpCoord;
-  isObs res;
+void World3DApp::draw3DLine(){
+  Obst tmpCoord;
+  IsObs res;
   int wallHeightPercent, wallHeightPixel, wallBeginPixel;
-  int countRay    = 1; 
+  int countRay    = 1;
   int rayWidth    = game.W  / game.maxDegreeLine;
   int _angle, distance, _distance;
 
@@ -182,15 +131,14 @@ static void draw3DLine(){
           // WALL
           for (int h = wallBeginPixel;h <= wallBeginPixel + wallHeightPixel; h++){
             for (int w = 0; w <= rayWidth;w++ )  {
-              res.infos.color = getColorFromDistance(res.infos.rgb, distance, game.maxDistanceLine, 100);              
+              res.infos.color = getColorFromDistance(res.infos.rgb, distance, game.maxDistanceLine, 100);
               StickCP2.Display.drawPixel((countRay * rayWidth) + w, h,  res.infos.color);
-              // res.infos.color == BLACK ? BLACK : w % 3 == 1 && h % 2 == 0 || w % 3 == 0 && h % 2 == 1? TFT_LIGHTGREY: TFT_DARKGREY);
             }
           }
           break;
         }
      }
-    if (game._3DInit == true && 
+    if (game._3DInit == true &&
       game.historyBlocks[countRay].distance == _distance &&
       game.historyBlocks[countRay].color == res.infos.color)  {
       continue;
@@ -198,7 +146,7 @@ static void draw3DLine(){
     // SKY
     for (int h = 0; h <= wallBeginPixel; h++){
       for (int w = 0; w <= rayWidth; w++ )  {
-        if (game._3DInit == true && h < game.historyBlocks[countRay].beginWall) 
+        if (game._3DInit == true && h < game.historyBlocks[countRay].beginWall)
           continue;
         StickCP2.Display.drawPixel((countRay * rayWidth) + w, h, getColorFromDistance(__SKY_RGB_COLOR__, wallBeginPixel - h, wallBeginPixel, 50) );
       }
@@ -206,13 +154,13 @@ static void draw3DLine(){
     // GRASS
     for (int h = wallBeginPixel + wallHeightPixel; h <= game.H; h++){
       for (int w = 0; w < rayWidth;w++ )  {
-        if (game._3DInit == true 
-            && wallBeginPixel + wallHeightPixel >= game.historyBlocks[countRay].beginGrass 
-            && h > game.historyBlocks[countRay].beginGrass) 
+        if (game._3DInit == true
+            && wallBeginPixel + wallHeightPixel >= game.historyBlocks[countRay].beginGrass
+            && h > game.historyBlocks[countRay].beginGrass)
             continue;
         StickCP2.Display.drawPixel((countRay * rayWidth) + w, h,  getColorFromDistance(__GRASS_RGB_COLOR__, game.H - h, game.H, 50));
       }
-    }   
+    }
     game.historyBlocks[countRay].distance = _distance;
     game.historyBlocks[countRay].beginWall = wallBeginPixel;
     game.historyBlocks[countRay].beginGrass = wallBeginPixel + wallHeightPixel;
@@ -222,22 +170,13 @@ static void draw3DLine(){
 }
 
 
-
-World3DApp world3DApp;
-
 void World3DApp::Setup()
 {
-  // На случай повторного запуска приложения освобождаем буфер
-  // от предыдущего запуска и сбрасываем счётчик препятствий,
-  // иначе при каждом входе в приложение будет утечка памяти.
-  if (game.obstacles) {
-    free(game.obstacles);
-    game.obstacles = nullptr;
-  }
-  game.nbObstacles = 0;
-  game._3DInit = false;
-
-  game.obstacles = (obst*)malloc(3000 * sizeof(obst));
+  // Поля game теперь и так свежие при каждом создании World3DApp — их не
+  // нужно сбрасывать вручную. Единственное, что реально требует действия
+  // при старте — это выделение буфера препятствий (он не может быть
+  // членом фиксированного размера, т.к. велик для стека/BSS).
+  game.obstacles = (Obst*)malloc(3000 * sizeof(Obst));
   StickCP2.Display.fillScreen(TFT_BLACK);
   game.W = StickCP2.Display.width();
   game.H = StickCP2.Display.height();
@@ -254,26 +193,25 @@ void World3DApp::Exit()
 }
 
 
-
 bool World3DApp::Loop()
 {
-  obst tmpCoord;
-  isObs res;
+  Obst tmpCoord;
+  IsObs res;
   bool leftButton  = StickCP2.BtnPWR.isPressed();
   bool rightButton = StickCP2.BtnB.isPressed();
   bool frontButton = StickCP2.BtnA.isPressed();
   bool backButton  = leftButton && rightButton;
   bool userAction  = leftButton || rightButton || frontButton;
-  
+
   for (int i = 0; i<=game.nbObstacles; i++){
-     StickCP2.Display.drawPixel(game.obstacles[i].x, game.obstacles[i].y, TFT_RED);//game.obstacles[i].color);
+     StickCP2.Display.drawPixel(game.obstacles[i].x, game.obstacles[i].y, TFT_RED);
   }
   if (userAction){
     StickCP2.Display.drawPixel(game.player.x, game.player.y, BLACK);
     drawLine(BLACK);
     if (backButton) {
       return false;
-    } 
+    }
     else if (frontButton) {
       tmpCoord =  getCoord(game.player.x, game.player.y, 2, game.directionDegree + ( game.maxDegreeLine / 2) );
       game.player.x = tmpCoord.x;

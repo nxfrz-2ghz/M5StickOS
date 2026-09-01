@@ -1,43 +1,23 @@
 #include "M5StickCPlus2.h"
 #include <LittleFS.h>
 #include <WiFi.h>
-#include <WebServer.h>
-#include "../../libs/prefs.h"
-#include "../../libs/gui/gui.h"
 #include <esp_sntp.h>
-#include "server.h"
-
-// --- Defaults ---
-#define CFG_FILE "/server.cfg"
-#define DEFAULT_AP_SSID     "M5Stick_AP"
-#define DEFAULT_AP_PASS     "password123"
-#define DEFAULT_STA_SSID    ""
-#define DEFAULT_STA_PASS    ""
-#define DEFAULT_MODE        0   // 0 = AP, 1 = STA
-
-WebServer server(80);
-
-// --- Runtime config ---
-
-static String cfg_ap_ssid   = DEFAULT_AP_SSID;
-static String cfg_ap_pass   = DEFAULT_AP_PASS;
-static String cfg_sta_ssid  = DEFAULT_STA_SSID;
-static String cfg_sta_pass  = DEFAULT_STA_PASS;
-static bool   cfg_mode      = DEFAULT_MODE;   // current active mode
+#include "../../libs/preferences/prefs.h"
+#include "serverBackendTask.h"
 
 // ─────────────────────────────────────────
 //  Config persistence
 // ─────────────────────────────────────────
 
-static void loadConfig() {
-    cfg_ap_ssid  = prefGetString("ap_ssid",  "M5Stick_AP"); 
-    cfg_ap_pass  = prefGetString("ap_pass",  "12345678");
-    cfg_sta_ssid = prefGetString("sta_ssid", ""); 
-    cfg_sta_pass = prefGetString("sta_pass", "");
-    cfg_mode     = prefGetBool("mode", false);
+void ServerBackendTask::loadConfig() {
+    cfg_ap_ssid  = prefGetString(KEY_AP_SSID, DEFAULT_AP_SSID);
+    cfg_ap_pass  = prefGetString(KEY_AP_PASS, DEFAULT_AP_PASS);
+    cfg_sta_ssid = prefGetString(KEY_STA_SSID, DEFAULT_STA_SSID);
+    cfg_sta_pass = prefGetString(KEY_STA_PASS, DEFAULT_STA_PASS);
+    cfg_mode     = prefGetBool(KEY_SERVER_MODE, false);
 }
 
-static void saveConfig() {
+void ServerBackendTask::saveConfig() {
     prefSetString("ap_ssid",  cfg_ap_ssid);
     prefSetString("ap_pass",  cfg_ap_pass);
     prefSetString("sta_ssid", cfg_sta_ssid);
@@ -49,15 +29,15 @@ static void saveConfig() {
 //  Network startup
 // ─────────────────────────────────────────
 
-static void startAP() {
+void ServerBackendTask::startAP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(cfg_ap_ssid.c_str(), cfg_ap_pass.c_str());
     Serial.print("AP IP: ");
     Serial.println(WiFi.softAPIP());
-    displayText(("Mode: AP\n" + cfg_ap_ssid + "\nIP: " + WiFi.softAPIP().toString()).c_str());
+    statusText_ = "Mode: AP\n" + cfg_ap_ssid + "\nIP: " + WiFi.softAPIP().toString();
 }
 
-static bool startSTA() {
+bool ServerBackendTask::startSTA() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(cfg_sta_ssid.c_str(), cfg_sta_pass.c_str());
     for (int i = 0; i < 20; i++) {
@@ -89,12 +69,12 @@ static bool startSTA() {
             break;
         }
     }
-    displayText(("Mode: STA\n" + cfg_sta_ssid + "\nIP: " + WiFi.localIP().toString()).c_str());
+    statusText_ = "Mode: STA\n" + cfg_sta_ssid + "\nIP: " + WiFi.localIP().toString();
     return true;
 }
 
-static void stopNetwork() {
-    server.stop();
+void ServerBackendTask::stopNetwork() {
+    server_.stop();
 
     WiFi.disconnect(true, true); // отключить STA и удалить настройки подключения
     WiFi.softAPdisconnect(true); // выключить AP
@@ -103,11 +83,33 @@ static void stopNetwork() {
     delay(200);
 }
 
+void ServerBackendTask::applyMode() {
+    bool staOk = false;
+    if (cfg_mode == 1) {
+        staOk = startSTA();
+    }
+    if (!staOk) {
+        cfg_mode = 0;
+        saveConfig();
+        startAP();
+    }
+    server_.begin();
+}
+
+void ServerBackendTask::ToggleMode() {
+    cfg_mode = !cfg_mode;
+    saveConfig();
+    statusText_ = "Switching to\n" + String(cfg_mode ? "STA" : "AP");
+    stopNetwork();
+    applyMode();
+    Serial.println("Network restarted");
+}
+
 // ─────────────────────────────────────────
 //  Helper: current date string YYYY-MM-DD
 // ─────────────────────────────────────────
 
-static String currentDateString() {
+String ServerBackendTask::currentDateString() const {
     auto dt = StickCP2.Rtc.getDateTime();
     if (dt.date.year < 2020) return "nodate";
     char buf[16];
@@ -120,7 +122,7 @@ static String currentDateString() {
 //  File save
 // ─────────────────────────────────────────
 
-static void saveTextToFile(const String &filename, const String &text) {
+void ServerBackendTask::saveTextToFile(const String &filename, const String &text) {
     String path = filename.startsWith("/") ? filename : "/" + filename;
     File file = LittleFS.open(path, FILE_WRITE);
     if (!file) { Serial.println("Failed to open file for writing"); return; }
@@ -129,14 +131,7 @@ static void saveTextToFile(const String &filename, const String &text) {
     Serial.printf("Saved: %s\n", path.c_str());
 }
 
-static File imageUploadFile;
-static String imageUploadResponse = "No image uploaded";
-static bool imageUploadOpen = false;
-static String imageUploadSavedName = "";
-static size_t imageUploadBytes = 0;
-static const size_t MAX_IMAGE_UPLOAD_BYTES = 2 * 1024 * 1024; // 2 MB limit
-
-static String normalizeUploadImageFilename(const String &filename) {
+String ServerBackendTask::normalizeUploadImageFilename(const String &filename) const {
     String name = filename;
     if (name.length() == 0) {
         name = currentDateString();
@@ -160,58 +155,57 @@ static String normalizeUploadImageFilename(const String &filename) {
     return name;
 }
 
-static void handleUploadImagePost() {
-    server.send(200, "text/plain", imageUploadResponse);
+void ServerBackendTask::handleUploadImagePost() {
+    server_.send(200, "text/plain", imageUploadResponse_);
 }
 
-static void handleUploadImage() {
-    HTTPUpload& upload = server.upload();
+void ServerBackendTask::handleUploadImage() {
+    HTTPUpload& upload = server_.upload();
 
     if (upload.status == UPLOAD_FILE_START) {
         String filename = normalizeUploadImageFilename(upload.filename);
-        imageUploadSavedName = filename;
+        imageUploadSavedName_ = filename;
 
-      imageUploadBytes = 0;
-      imageUploadFile = LittleFS.open(filename, FILE_WRITE);
-      imageUploadOpen = (bool)imageUploadFile;
-      imageUploadResponse = imageUploadOpen ? String("Uploading to ") + filename : String("Failed to open ") + filename;
+      imageUploadBytes_ = 0;
+      imageUploadFile_ = LittleFS.open(filename, FILE_WRITE);
+      imageUploadOpen_ = (bool)imageUploadFile_;
+      imageUploadResponse_ = imageUploadOpen_ ? String("Uploading to ") + filename : String("Failed to open ") + filename;
       Serial.printf("Upload start: %s\n", filename.c_str());
     } else if (upload.status == UPLOAD_FILE_WRITE) {
-      if (imageUploadOpen) {
-        imageUploadFile.write(upload.buf, upload.currentSize);
-        imageUploadBytes += upload.currentSize;
-        if (imageUploadBytes > MAX_IMAGE_UPLOAD_BYTES) {
-          // Too large: abort and remove partial file
-          imageUploadFile.close();
-          imageUploadOpen = false;
-          LittleFS.remove(imageUploadSavedName);
-          imageUploadResponse = "Upload too large";
-          Serial.printf("Upload aborted: %s (exceeded %u bytes)\n", imageUploadSavedName.c_str(), (unsigned)MAX_IMAGE_UPLOAD_BYTES);
+      if (imageUploadOpen_) {
+        imageUploadFile_.write(upload.buf, upload.currentSize);
+        imageUploadBytes_ += upload.currentSize;
+        if (imageUploadBytes_ > kMaxImageUploadBytes) {
+          imageUploadFile_.close();
+          imageUploadOpen_ = false;
+          LittleFS.remove(imageUploadSavedName_);
+          imageUploadResponse_ = "Upload too large";
+          Serial.printf("Upload aborted: %s (exceeded %u bytes)\n", imageUploadSavedName_.c_str(), (unsigned)kMaxImageUploadBytes);
         }
       }
     } else if (upload.status == UPLOAD_FILE_END) {
-      if (imageUploadOpen) {
-        imageUploadFile.close();
-        imageUploadOpen = false;
-        imageUploadResponse = String("Saved image as: ") + imageUploadSavedName;
-        displayText(("Image: " + imageUploadSavedName + "\nSaved!").c_str());
-        Serial.printf("Upload finished: %s (%u bytes)\n", imageUploadSavedName.c_str(), (unsigned)imageUploadBytes);
+      if (imageUploadOpen_) {
+        imageUploadFile_.close();
+        imageUploadOpen_ = false;
+        imageUploadResponse_ = String("Saved image as: ") + imageUploadSavedName_;
+        statusText_ = "Image: " + imageUploadSavedName_ + "\nSaved!";
+        Serial.printf("Upload finished: %s (%u bytes)\n", imageUploadSavedName_.c_str(), (unsigned)imageUploadBytes_);
       } else {
-        if (imageUploadResponse.length() == 0) imageUploadResponse = "Upload failed";
+        if (imageUploadResponse_.length() == 0) imageUploadResponse_ = "Upload failed";
       }
     } else if (upload.status == UPLOAD_FILE_ABORTED) {
-        if (imageUploadOpen) {
-            imageUploadFile.close();
-            imageUploadOpen = false;
+        if (imageUploadOpen_) {
+            imageUploadFile_.close();
+            imageUploadOpen_ = false;
         }
-        imageUploadResponse = "Upload aborted";
+        imageUploadResponse_ = "Upload aborted";
     }
 }
 
 // ─────────────────────────────────────────
 //  HTML page
 // ─────────────────────────────────────────
-static void handleRoot() {
+void ServerBackendTask::handleRoot() {
     String dateStr = currentDateString();
 
     String html = R"=====(<!DOCTYPE html>
@@ -343,8 +337,7 @@ static void handleRoot() {
   function tickClock(){
     const status = document.getElementById('sync-status');
     if (timeSynced) {
-      // Инкрементируем локально каждую секунду между опросами ESP
-      displayedTime = displayedTime; // обновляется из fetchEspTime
+      displayedTime = displayedTime;
       document.getElementById('devtime').textContent = displayedTime + ' ✓';
     } else {
       document.getElementById('devtime').textContent = 'не синхронизировано';
@@ -510,8 +503,6 @@ static void handleRoot() {
 
     try {
       const img = await loadImage(file);
-      // Resize large images on the client to avoid large uploads and
-      // memory pressure on the device. maxSide=800 produces smaller BMPs.
       const [width, height] = resizeDimensions(img.width, img.height, 800);
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -561,47 +552,45 @@ static void handleRoot() {
 </body>
 </html>)=====";
 
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "0");
-    server.send(200, "text/html; charset=utf-8", html);
+    server_.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server_.sendHeader("Pragma", "no-cache");
+    server_.sendHeader("Expires", "0");
+    server_.send(200, "text/html; charset=utf-8", html);
 }
 
 // ─────────────────────────────────────────
 //  Handlers
 // ─────────────────────────────────────────
-static void handleSetText() {
-    if (server.method() != HTTP_POST) { server.send(405, "text/plain", "Method Not Allowed"); return; }
+void ServerBackendTask::handleSetText() {
+    if (server_.method() != HTTP_POST) { server_.send(405, "text/plain", "Method Not Allowed"); return; }
 
-    String filename = server.arg("filename");
-    String text     = server.arg("text");
+    String filename = server_.arg("filename");
+    String text     = server_.arg("text");
 
     if (filename.length() == 0) filename = currentDateString();
     if (!filename.endsWith(".txt") && !filename.endsWith(".script") && !filename.endsWith(".html"))
         filename += ".txt";
 
     saveTextToFile(filename, text);
-    displayText(("File: " + filename + "\nSaved!").c_str());
-    server.send(200, "text/plain", "Saved as: " + filename);
+    statusText_ = "File: " + filename + "\nSaved!";
+    server_.send(200, "text/plain", "Saved as: " + filename);
 }
 
-static void handleSetTime() {
-    if (!server.hasArg("epoch")) {
-        server.send(400, "text/plain", "Missing epoch");
+void ServerBackendTask::handleSetTime() {
+    if (!server_.hasArg("epoch")) {
+        server_.send(400, "text/plain", "Missing epoch");
         return;
     }
 
-    unsigned long epoch = server.arg("epoch").toInt();
+    unsigned long epoch = server_.arg("epoch").toInt();
     if (epoch < 1000000000UL) {
-        server.send(400, "text/plain", "Bad epoch: " + server.arg("epoch"));
+        server_.send(400, "text/plain", "Bad epoch: " + server_.arg("epoch"));
         return;
     }
 
-    // Конвертируем epoch в struct tm
     time_t t = (time_t)epoch;
     struct tm *ti = gmtime(&t);  // UTC → tm
 
-    // Записываем в аппаратный RTC M5StickCP2
     m5::rtc_date_t date;
     date.year  = ti->tm_year + 1900;
     date.month = ti->tm_mon + 1;
@@ -615,7 +604,6 @@ static void handleSetTime() {
     StickCP2.Rtc.setDate(date);
     StickCP2.Rtc.setTime(time);
 
-    // Читаем обратно для проверки
     auto dt = StickCP2.Rtc.getDateTime();
     char buf[32];
     snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
@@ -623,15 +611,14 @@ static void handleSetTime() {
         dt.time.hours, dt.time.minutes, dt.time.seconds);
 
     Serial.printf("RTC set: %s\n", buf);
-    server.send(200, "text/plain", String(buf));
+    server_.send(200, "text/plain", String(buf));
 }
 
-static void handleGetTime() {
+void ServerBackendTask::handleGetTime() {
     auto dt = StickCP2.Rtc.getDateTime();
 
-    // Проверка: если год < 2020 — RTC не установлен
     if (dt.date.year < 2020) {
-        server.send(200, "text/plain", "unsynced");
+        server_.send(200, "text/plain", "unsynced");
         return;
     }
 
@@ -640,97 +627,56 @@ static void handleGetTime() {
         dt.date.year, dt.date.month, dt.date.date,
         dt.time.hours, dt.time.minutes, dt.time.seconds);
 
-    server.send(200, "text/plain", String(buf));
+    server_.send(200, "text/plain", String(buf));
 }
 
-static void handleSaveConfig() {
-    if (server.method() != HTTP_POST) { server.send(405, "text/plain", "Method Not Allowed"); return; }
+void ServerBackendTask::handleSaveConfig() {
+    if (server_.method() != HTTP_POST) { server_.send(405, "text/plain", "Method Not Allowed"); return; }
 
-    if (server.hasArg("ap_ssid") && server.arg("ap_ssid").length() > 0)
-        cfg_ap_ssid = server.arg("ap_ssid");
-    if (server.hasArg("ap_pass") && server.arg("ap_pass").length() >= 8)
-        cfg_ap_pass = server.arg("ap_pass");
-    if (server.hasArg("sta_ssid"))
-        cfg_sta_ssid = server.arg("sta_ssid");
-    if (server.hasArg("sta_pass"))
-        cfg_sta_pass = server.arg("sta_pass");
+    if (server_.hasArg("ap_ssid") && server_.arg("ap_ssid").length() > 0)
+        cfg_ap_ssid = server_.arg("ap_ssid");
+    if (server_.hasArg("ap_pass") && server_.arg("ap_pass").length() >= 8)
+        cfg_ap_pass = server_.arg("ap_pass");
+    if (server_.hasArg("sta_ssid"))
+        cfg_sta_ssid = server_.arg("sta_ssid");
+    if (server_.hasArg("sta_pass"))
+        cfg_sta_pass = server_.arg("sta_pass");
 
     saveConfig();
-    displayText("Config saved!\nRestart to\napply network");
-    server.send(200, "text/plain", "Config saved. Press BtnA to switch mode or restart.");
+    statusText_ = "Config saved!\nRestart to\napply network";
+    server_.send(200, "text/plain", "Config saved. Press BtnA to switch mode or restart.");
 }
 
 // ─────────────────────────────────────────
-//  Init
+//  Task lifecycle
 // ─────────────────────────────────────────
-WebServerApp webServerApp;
-
-void WebServerApp::Setup() {
+void ServerBackendTask::Setup() {
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS Mount Failed");
     }
 
     loadConfig();
+    applyMode();
 
-    bool staOk = false;
-    if (cfg_mode == 1) {
-        staOk = startSTA();
-    }
-    if (!staOk) {
-        cfg_mode = 0;
-        saveConfig();
-        startAP();
-    }
+    server_.on("/",           [this]() { handleRoot(); });
+    server_.on("/setText",    [this]() { handleSetText(); });
+    server_.on("/setTime",    [this]() { handleSetTime(); });
+    server_.on("/getTime",    [this]() { handleGetTime(); });
+    server_.on("/uploadImage", HTTP_POST, [this]() { handleUploadImagePost(); }, [this]() { handleUploadImage(); });
+    server_.on("/saveConfig",  [this]() { handleSaveConfig(); });
+    server_.onNotFound([this]() { server_.send(404, "text/plain", "Not Found"); });
 
-    server.on("/",           handleRoot);
-    server.on("/setText",    handleSetText);
-    server.on("/setTime",    handleSetTime);
-    server.on("/getTime",     handleGetTime);
-    server.on("/uploadImage", HTTP_POST, handleUploadImagePost, handleUploadImage);
-    server.on("/saveConfig",  handleSaveConfig);
-    server.onNotFound([]() { server.send(404, "text/plain", "Not Found"); });
-
-    server.begin();
+    server_.begin();
     Serial.println("Web server started!");
 }
 
-// ─────────────────────────────────────────
-//  Loop
-// ─────────────────────────────────────────
-bool WebServerApp::Loop() {
-    server.handleClient();
+void ServerBackendTask::Stop() {
+    stopNetwork();
+}
 
-    if (StickCP2.BtnA.wasPressed()) {
-        cfg_mode = !cfg_mode;
-        saveConfig();
-
-        displayText(("Switching to\n" + String(cfg_mode ? "STA" : "AP")).c_str());
-
-        stopNetwork();
-
-        bool ok = false;
-
-        if (cfg_mode) {
-            ok = startSTA();
-        }
-
-        if (!ok) {
-            cfg_mode = 0;
-            saveConfig();
-            startAP();
-        }
-
-        server.begin();
-
-        Serial.println("Network restarted");
-    }
-
-    if (StickCP2.BtnB.wasPressed()) {
-      stopNetwork();
-      displayText("WiFi OFF");
-      delay(300);
-      return false;
-    }
-
+bool ServerBackendTask::Loop() {
+    server_.handleClient();
+    // Задача работает бессрочно, пока её явно не остановят через
+    // TaskManager::Stop("Server") (например, из ServerFrontendApp).
     return true;
 }

@@ -7,24 +7,13 @@
 #include "../FileViewer/fileViewer.h"
 #include "fileManager.h"
 
-static String currentPath = "/";
-static std::vector<String> filesList;
-
-// Состояния менеджера
-enum ManagerState { LIST, FILE_OPTIONS, READER, IMAGE_VIEWER };
-static ManagerState currentState = LIST;
-static std::vector<String> options;
-
-static int selectedIndex = 0;
-static int optionIndex = 0;
-
-static bool isImageFile(const String &filename) {
+bool FileManagerApp::isImageFile(const String &filename) const {
     String name = filename;
     name.toLowerCase();
     return name.endsWith(".bmp");
 }
 
-static bool isTextFile(const String &filename) {
+bool FileManagerApp::isTextFile(const String &filename) const {
     String name = filename;
     name.toLowerCase();
     return name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".csv") ||
@@ -32,7 +21,7 @@ static bool isTextFile(const String &filename) {
            name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".ino");
 }
 
-static void updateFilesArray(String path) {
+void FileManagerApp::updateFilesArray(const String &path) {
     filesList.clear();
     File root = LittleFS.open(path);
     if (!root || !root.isDirectory()) return;
@@ -44,7 +33,7 @@ static void updateFilesArray(String path) {
     }
 }
 
-static void updateOptions() {
+void FileManagerApp::updateOptions() {
     options.clear();
     if (filesList.empty()) {
         options = {"Delete", "Close"};
@@ -59,7 +48,7 @@ static void updateOptions() {
     }
 }
 
-static void displayUI() {
+void FileManagerApp::displayUI() {
     if (currentState == LIST) {
         displayList("--- Files ---", filesList, selectedIndex);
     } else {
@@ -68,7 +57,7 @@ static void displayUI() {
     }
 }
 
-static void handleAction() {
+void FileManagerApp::handleAction() {
     if (optionIndex == 0) {
         const String &filename = filesList[selectedIndex];
         if (isImageFile(filename)) {
@@ -107,8 +96,6 @@ int getUsagePercentage() {
     return (used * 100) / total;
 }
 
-FileManagerApp fileManagerApp;
-
 const char* FileManagerApp::StartPrompt() const {
     snprintf(startPromptBuf, sizeof(startPromptBuf), "FULL: %d%%", getUsagePercentage());
     return startPromptBuf;
@@ -119,10 +106,6 @@ void FileManagerApp::Setup() {
         displayText("FS Mount Failed");
         return;
     }
-    currentPath = "/";
-    currentState = LIST;
-    selectedIndex = 0;
-    optionIndex = 0;
     updateFilesArray(currentPath);
     displayUI();
 }

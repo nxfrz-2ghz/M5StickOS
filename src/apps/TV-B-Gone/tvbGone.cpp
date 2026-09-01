@@ -1,188 +1,136 @@
 #include "M5StickCPlus2.h"
+
+#define SEND_PWM_BY_TIMER
 #include <IRremote.hpp>
+
 #include "worldIrCodes.h"
 #include "tvbGone.h"
 #include "../../libs/gui/gui.h"
 #include "../../libs/gui/activityCheck.h"
 
-#define putstring_nl(s) Serial.println(s)
-#define putstring(s) Serial.print(s)
-#define putnum_ud(n) Serial.print(n, DEC)
-#define putnum_uh(n) Serial.print(n, HEX)
-#define MAX_WAIT_TIME 65535 //tens of us (ie: 655.350ms)
+namespace {
 
-static const int Myregion=1;
+// ---- Параметры тайминга и региона -----------------------------------
 
-extern const IrCode* const NApowerCodes[];
-extern const IrCode* const EUpowerCodes[];
-uint8_t num_NAcodes = NUM_ELEM(NApowerCodes);
-uint8_t num_EUcodes = NUM_ELEM(EUpowerCodes);
+constexpr uint16_t kDelayBetweenCodesMs = 205;   // пауза между кодами
+constexpr uint16_t kDelayBeforeBlinkMs  = 1300;  // пауза перед сигналом "готово"
+constexpr uint8_t  kDoneBlinkCount      = 8;
+constexpr uint16_t kDoneBlinkOnMs       = 60;
+constexpr uint16_t kDoneBlinkOffMs      = 60;
 
-static uint8_t bitsleft_r = 0;
-static uint8_t bits_r=0;
-static uint8_t code_ptr;
-static volatile const IrCode * powerCode;
+constexpr int kRegionNA = 0;
+constexpr int kRegionEU = 1;
+// TODO: сделать регион переключаемым пользователем (кнопкой/меню),
+constexpr int kSelectedRegion = kRegionEU;
 
-static uint16_t ontime, offtime;
-static uint8_t i,num_codes;
-static uint8_t region;
+IRsend irSender(IR_TX_PIN);
 
-static uint16_t rawData[300];
-IRsend irsend(IRLED);
+// ---- Разбор сжатого формата IrCode ------------------------------------
 
-
-uint8_t read_bits(uint8_t count)
-{
-  uint8_t i;
-  uint8_t tmp=0;
-
-  // we need to read back count bytes
-  for (i=0; i<count; i++) {
-    // check if the 8-bit buffer we have has run out
-    if (bitsleft_r == 0) {
-      // in which case we read a new byte in
-      bits_r = powerCode->codes[code_ptr++];
-      DEBUGP(putstring("\n\rGet byte: ");
-      putnum_uh(bits_r);
-      );
-      // and reset the buffer size (8 bites in a byte)
-      bitsleft_r = 8;
-    }
-    // remove one bit
-    bitsleft_r--;
-    // and shift it off of the end of 'bits_r'
-    tmp |= (((bits_r >> (bitsleft_r)) & 1) << (count-1-i));
+// Читает биты последовательно из code->codes, начиная с начала.
+class BitReader {
+public:
+  void reset(const IrCode* code) {
+    code_ = code;
+    bytePos_ = 0;
+    bitsLeft_ = 0;
   }
-  // return the selected bits in the LSB part of tmp
-  return tmp;
-}
 
-
-void delay_ten_us(uint16_t us) {
-  uint8_t timer;
-  while (us != 0) {
-    for (timer=0; timer <= DELAY_CNT; timer++) {
-      NOP();
-      NOP();
+  uint8_t read(uint8_t count) {
+    uint8_t result = 0;
+    for (uint8_t i = 0; i < count; i++) {
+      if (bitsLeft_ == 0) {
+        currentByte_ = code_->codes[bytePos_++];
+        bitsLeft_ = 8;
+      }
+      bitsLeft_--;
+      result |= (((currentByte_ >> bitsLeft_) & 1) << (count - 1 - i));
     }
-    NOP();
-    us--;
+    return result;
   }
-}
 
+private:
+  const IrCode* code_ = nullptr;
+  uint8_t bytePos_ = 0;
+  uint8_t bitsLeft_ = 0;
+  uint8_t currentByte_ = 0;
+};
 
-void sendIRCodes() 
-{
-  bool endingEarly = false;
-  irsend.begin(IRLED);
+// Разворачивает сжатую запись IrCode в буфер длительностей (в микросекундах),
+// готовый для передачи через IRsend::sendRaw(). Возвращает число элементов,
+// реально записанных в outBuffer (numPairs * 2).
+size_t decodeToRawBuffer(const IrCode* code, uint16_t* outBuffer, size_t bufferCapacity) {
+  BitReader reader;
+  reader.reset(code);
 
-  if(Myregion==0)
-    {region = EU;
-    num_codes = num_EUcodes;
-    }
+  const size_t maxPairs = bufferCapacity / 2;
+  const uint8_t numPairs = (code->numpairs < maxPairs) ? code->numpairs : maxPairs;
 
-  if(Myregion==1)
-    {region = NA;
-    num_codes = num_NAcodes;
-    }
- 
-
-  // for every POWER code in our collection
-  for (i=0 ; i<num_codes; i++) 
-  {
-
-    // print out the code # we are about to transmit
-    DEBUGP(putstring("\n\r\n\rCode #: ");
-    putnum_ud(i));
-
-    // point to next POWER code, from the right database
-    if (region == NA) {
-      powerCode = NApowerCodes[i];
-    }
-    else {
-      powerCode = EUpowerCodes[i];
-    }
-    
-    // Read the carrier frequency from the first byte of code structure
-    const uint8_t freq = powerCode->timer_val;
-    // set OCR for Timer1 to output this POWER code's carrier frequency
-
-    // Print out the frequency of the carrier and the PWM settings
-    DEBUGP(putstring("\n\rFrequency: ");
-    putnum_ud(freq);
-    );
-    
-    DEBUGP(uint16_t x = (freq+1) * 2;
-    putstring("\n\rFreq: ");
-    putnum_ud(F_CPU/x);
-    );
-
-    // Get the number of pairs, the second byte from the code struct
-    const uint8_t numpairs = powerCode->numpairs;
-    DEBUGP(putstring("\n\rOn/off pairs: ");
-    putnum_ud(numpairs));
-
-    // Get the number of bits we use to index into the timer table
-    // This is the third byte of the structure
-    const uint8_t bitcompression = powerCode->bitcompression;
-    DEBUGP(putstring("\n\rCompression: ");
-    putnum_ud(bitcompression);
-    putstring("\n\r"));
-
-    // For EACH pair in this code....
-    code_ptr = 0;
-    for (uint8_t k=0; k<numpairs; k++) {
-      uint16_t ti;
-
-      // Read the next 'n' bits as indicated by the compression variable
-      // The multiply by 4 because there are 2 timing numbers per pair
-      // and each timing number is one word long, so 4 bytes total!
-      ti = (read_bits(bitcompression)) * 2;
-
-      // read the onTime and offTime from the program memory
-      ontime = powerCode->times[ti];  // read word 1 - ontime
-      offtime = powerCode->times[ti+1];  // read word 2 - offtime
-
-      DEBUGP(putstring("\n\rti = ");
-      putnum_ud(ti>>1);
-      putstring("\tPair = ");
-      putnum_ud(ontime));
-      DEBUGP(putstring("\t");
-      putnum_ud(offtime));      
-
-      rawData[k*2] = ontime * 10;
-      rawData[(k*2)+1] = offtime * 10;
-      yield();
-    }
-
-    // Send Code with library
-    irsend.sendRaw(rawData, (numpairs*2) , freq);
-    Serial.print("\n");
+  for (uint8_t k = 0; k < numPairs; k++) {
+    const uint16_t idx     = reader.read(code->bitcompression) * 2;
+    const uint16_t onTime  = code->times[idx];
+    const uint16_t offTime = code->times[idx + 1];
+    outBuffer[k * 2]     = onTime * 10;
+    outBuffer[k * 2 + 1] = offTime * 10;
     yield();
-    //Flush remaining bits, so that next code starts
-    //with a fresh set of 8 bits.
-    bitsleft_r=0;
+  }
+  return numPairs * 2;
+}
 
-  
-    // delay 205 milliseconds before transmitting next POWER code
-    delay_ten_us(20500);
+// ---- Передача одного кода ---------------------------------------------
 
-    // if user is pushing (holding down) TRIGGER button, stop transmission early 
+void sendSingleCode(const IrCode* code) {
+  static uint16_t rawBuffer[300];
+  const size_t rawLength = decodeToRawBuffer(code, rawBuffer, sizeof(rawBuffer) / sizeof(rawBuffer[0]));
 
-    
-  } //end of POWER code for loop
+  irSender.sendRaw(rawBuffer, rawLength, code->timer_val); // timer_val хранит частоту несущей в кГц
+  yield();
 
-  if (endingEarly==false)
-  {
-    //pause for ~1.3 sec, then flash the visible LED 8 times to indicate that we're done
-    delay_ten_us(MAX_WAIT_TIME); // wait 655.350ms
-    delay_ten_us(MAX_WAIT_TIME); // wait 655.350ms
+  delay(kDelayBetweenCodesMs);
+}
+
+// Индикация "передача завершена". К моменту вызова ШИМ на IR_TX_PIN уже
+// остановлен библиотекой, поэтому пином можно управлять как обычным GPIO —
+// это тот же светодиод, что мигал при отправке ИК-кодов (см. worldIrCodes.h).
+void blinkDoneIndicator() {
+  delay(kDelayBeforeBlinkMs);
+  for (uint8_t i = 0; i < kDoneBlinkCount; i++) {
+    digitalWrite(IR_TX_PIN, HIGH);
+    delay(kDoneBlinkOnMs);
+    digitalWrite(IR_TX_PIN, LOW);
+    delay(kDoneBlinkOffMs);
+  }
+}
+
+void ensureIrInitialized() {
+  static bool initialized = false;
+  if (initialized) return;
+
+  // DISABLE_LED_FEEDBACK: свою индикацию делаем вручную в blinkDoneIndicator() —
+  // встроенный feedback-LED библиотеки не подходит (LED_BUILTIN не определён
+  // для этой платы, да и физически это тот же пин, что и ИК-передатчик).
+  irSender.begin(IR_TX_PIN, DISABLE_LED_FEEDBACK);
+  initialized = true;
+}
+
+} // namespace
+
+void sendIRCodes() {
+  ensureIrInitialized();
+
+  const IrCode* const* codes = (kSelectedRegion == kRegionEU) ? EUpowerCodes : NApowerCodes;
+  const uint8_t numNACodes = NUM_ELEM(NApowerCodes);
+  const uint8_t numEUCodes = NUM_ELEM(EUpowerCodes);
+  const uint8_t numCodes = (kSelectedRegion == kRegionEU) ? numEUCodes : numNACodes;
+
+  for (uint8_t i = 0; i < numCodes; i++) {
+    sendSingleCode(codes[i]);
   }
 
-} //end of sendAllCodes
+  blinkDoneIndicator();
+}
 
 
-TvbGoneApp tvbGoneApp;
 
 bool TvbGoneApp::Loop() {
   displayBigText("< READY >");
@@ -190,7 +138,7 @@ bool TvbGoneApp::Loop() {
     StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
     displayBigText("work...");
     sendIRCodes();
-    update_activity();
+    updateActivity();
   }
   return true;
 }
