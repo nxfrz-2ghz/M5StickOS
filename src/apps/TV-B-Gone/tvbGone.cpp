@@ -6,7 +6,6 @@
 #include "worldIrCodes.h"
 #include "tvbGone.h"
 #include "../../libs/gui/gui.h"
-#include "../../libs/gui/activityCheck.h"
 
 namespace {
 
@@ -89,9 +88,7 @@ void sendSingleCode(const IrCode* code) {
   delay(kDelayBetweenCodesMs);
 }
 
-// Индикация "передача завершена". К моменту вызова ШИМ на IR_TX_PIN уже
-// остановлен библиотекой, поэтому пином можно управлять как обычным GPIO —
-// это тот же светодиод, что мигал при отправке ИК-кодов (см. worldIrCodes.h).
+// Индикация "передача завершена" — серия мигков в конце всего процесса.
 void blinkDoneIndicator() {
   delay(kDelayBeforeBlinkMs);
   for (uint8_t i = 0; i < kDoneBlinkCount; i++) {
@@ -102,43 +99,88 @@ void blinkDoneIndicator() {
   }
 }
 
+// Короткая вспышка после КАЖДОГО отправленного кода — просто визуальный
+// "тик", что сигнал ушёл. К моменту вызова ШИМ на IR_TX_PIN уже остановлен
+// (sendSingleCode() внутри дожидается delay(kDelayBetweenCodesMs)), поэтому
+// пином можно так же безопасно управлять как обычным GPIO, как и в
+// blinkDoneIndicator() выше.
+constexpr uint16_t kStepBlinkOnMs = 20;
+
+void blinkStepIndicator() {
+  digitalWrite(IR_TX_PIN, HIGH);
+  delay(kStepBlinkOnMs);
+  digitalWrite(IR_TX_PIN, LOW);
+}
+
 void ensureIrInitialized() {
   static bool initialized = false;
   if (initialized) return;
 
-  // DISABLE_LED_FEEDBACK: свою индикацию делаем вручную в blinkDoneIndicator() —
-  // встроенный feedback-LED библиотеки не подходит (LED_BUILTIN не определён
-  // для этой платы, да и физически это тот же пин, что и ИК-передатчик).
+  // DISABLE_LED_FEEDBACK: свою индикацию делаем вручную в blinkDoneIndicator()/
+  // blinkStepIndicator() — встроенный feedback-LED библиотеки не подходит
+  // (LED_BUILTIN не определён для этой платы, да и физически это тот же
+  // пин, что и ИК-передатчик).
   irSender.begin(IR_TX_PIN, DISABLE_LED_FEEDBACK);
   initialized = true;
 }
 
 } // namespace
 
-void sendIRCodes() {
-  ensureIrInitialized();
-
-  const IrCode* const* codes = (kSelectedRegion == kRegionEU) ? EUpowerCodes : NApowerCodes;
-  const uint8_t numNACodes = NUM_ELEM(NApowerCodes);
-  const uint8_t numEUCodes = NUM_ELEM(EUpowerCodes);
-  const uint8_t numCodes = (kSelectedRegion == kRegionEU) ? numEUCodes : numNACodes;
-
-  for (uint8_t i = 0; i < numCodes; i++) {
-    sendSingleCode(codes[i]);
-  }
-
-  blinkDoneIndicator();
+void TvbGoneApp::displayProgress() const {
+    char buf[24];
+    if (finished) {
+      snprintf(buf, sizeof(buf), "Complete: %u", totalCodes);
+    } else {
+      snprintf(buf, sizeof(buf), "Done: %u/%u", currentIndex, totalCodes);
+    }
+    displayBigText(buf);
+    displayProgressBar((float)currentIndex / totalCodes, 10);
 }
 
+void TvbGoneApp::Setup() {
+    ensureIrInitialized();
 
+    codesList = (kSelectedRegion == kRegionEU) ? EUpowerCodes : NApowerCodes;
+    const uint8_t numNACodes = NUM_ELEM(NApowerCodes);
+    const uint8_t numEUCodes = NUM_ELEM(EUpowerCodes);
+    totalCodes = (kSelectedRegion == kRegionEU) ? numEUCodes : numNACodes;
+    currentIndex = 0;
+    finished = false;
+
+    displayProgress();
+}
 
 bool TvbGoneApp::Loop() {
-  displayBigText("< READY >");
-  if (StickCP2.BtnA.wasPressed()) {
-    StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
-    displayBigText("work...");
-    sendIRCodes();
-    updateActivity();
-  }
-  return true;
+    // Отмена — проверяем ДО отправки следующего кода. Раньше эта проверка
+    // шла ПОСЛЕ sendSingleCode()/currentIndex++, поэтому при отмене
+    // отправлялся ещё один "лишний" код прежде, чем приложение
+    // останавливалось.
+    if (StickCP2.BtnPWR.wasPressed()) {
+      displayClear();
+      displayBigText("CANCELED!");
+      delay(300);
+      finished = true;
+      return false;
+    }
+
+    sendSingleCode(codesList[currentIndex]);
+    blinkStepIndicator();
+    currentIndex++;
+
+    if (currentIndex >= totalCodes) {
+      // Важно: сначала finished = true и отрисовка "Complete" — и только
+      // потом blinkDoneIndicator(). Раньше finished выставлялся ПОСЛЕ
+      // displayProgress(), поэтому на последнем кадре ещё рисовалось
+      // "Done: N/N", а на СЛЕДУЮЩЕМ кадре Loop() успевал обратиться к
+      // codesList[currentIndex] за пределами массива (currentIndex уже
+      // равен totalCodes) — неопределённое поведение/зависание раньше,
+      // чем вообще доходило до отрисовки "Complete".
+      finished = true;
+      displayProgress();
+      blinkDoneIndicator();
+      return false;
+    }
+
+    displayProgress();
+    return true;
 }

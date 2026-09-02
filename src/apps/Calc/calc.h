@@ -5,7 +5,8 @@
 
 class CalcApp : public App {
 public:
-    const char* GetName() const override { return "Calc"; }
+    static const char* GetName() { return "Calc"; }
+
     bool Loop() override;
 
 private:

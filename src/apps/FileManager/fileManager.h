@@ -8,10 +8,11 @@ int getUsagePercentage();
 
 class FileManagerApp : public App {
 public:
-    const char* GetName() const override { return "Files"; }
+    static const char* GetName() { return "Files"; }
+    static const char* StartPrompt();
+
     void Setup() override;
     bool Loop() override;
-    const char* StartPrompt() const override;
 
 private:
     enum ManagerState { LIST, FILE_OPTIONS, READER, IMAGE_VIEWER };
@@ -22,13 +23,6 @@ private:
     void updateOptions();
     void displayUI();
     void handleAction();
-
-    // Заполняется в StartPrompt() через snprintf — вызывается каждый кадр,
-    // пока висит экран "нажмите A", поэтому обычный String означал бы
-    // аллокацию на каждый кадр. Метод StartPrompt() отмечен const, поэтому
-    // буфер должен быть mutable, чтобы можно было обновлять его без
-    // изменения логического состояния объекта.
-    mutable char startPromptBuf[24] = {0};
 
     // Состояние менеджера — теперь поля объекта, а не статики файла:
     // новый экземпляр создаётся при каждом запуске приложения (см.

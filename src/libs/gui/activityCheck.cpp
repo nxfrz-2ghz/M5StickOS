@@ -1,35 +1,17 @@
 #include "M5StickCPlus2.h"
 #include "activityCheck.h"
+#include "gui.h"
 
 #define timeout 5000
 static unsigned long lastActivityTime = 0;
-static int lastBarWidth = -1;
 
 void drawIdleTimerBar() {
   unsigned long elapsed = millis() - lastActivityTime;
   float progress = 1.0 - (float)elapsed / timeout;
   if (progress < 0.0) progress = 0.0;
 
-  int totalWidth = StickCP2.Display.width();
-  int barWidth = (int)(totalWidth * progress);
-  int barHeight = 3;
-  int barY = StickCP2.Display.height() - barHeight;
-
-  // Рисуем только если ширина изменилась
-  if (barWidth != lastBarWidth) {
-    // Закрашиваем только "исчезнувшую" часть полоски черным
-    if (barWidth < lastBarWidth) {
-      StickCP2.Display.fillRect(barWidth, barY, totalWidth - barWidth, barHeight, BLACK);
-    }
-
-    // Рисуем саму полоску
-    uint16_t barColor = (progress > 0.5) ? TFT_GREEN: (progress > 0.25 ? TFT_YELLOW: TFT_RED);
-    StickCP2.Display.fillRect(0, barY, barWidth, barHeight, barColor);
-
-    lastBarWidth = barWidth;
-  }
+  displayProgressBar(progress);
 }
-
 
 void updateActivity() {
   lastActivityTime = millis();

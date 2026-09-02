@@ -9,7 +9,8 @@
 // (BtnB просто закрывает экран — сервер продолжает отвечать на запросы).
 class ServerFrontendApp : public App {
 public:
-    const char* GetName() const override { return "Web"; }
+    static const char* GetName() { return "Web"; }
+
     void Setup() override;
     bool Loop() override;
 

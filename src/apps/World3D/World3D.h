@@ -16,11 +16,12 @@ public:
         RgbColor rgb;
     };
 
-    const char* GetName() const override { return "3D"; }
+    static const char* GetName() { return "3D"; }
+    static const char* StartPrompt() { return "< RUN >"; }
+
     void Setup() override;
     bool Loop() override;
     void Exit() override;
-    const char* StartPrompt() const override { return "< RUN >"; }
 
 private:
     struct IsObs {

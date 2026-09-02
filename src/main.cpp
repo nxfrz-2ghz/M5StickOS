@@ -14,42 +14,33 @@
 #include "apps/Settings/settings.h"
 
 
-// Слот приложения в лаунчере.
-//
-// `prototype` — лёгкий, ничего не делающий экземпляр, который живёт всё
-// время работы прошивки и нужен только для того, чтобы было у кого
-// спросить GetName()/StartPrompt()/AutoStart() ещё до того, как
-// приложение реально запущено (Setup() на нём никогда не вызывается).
-//
-// `create` — фабрика, создающая СВЕЖИЙ экземпляр приложения в момент
-// запуска (BtnA на экране "< START >"). Именно на этом новом экземпляре
-// и вызывается Setup()/Loop()/Exit() — поэтому классам приложений больше
-// не нужно вручную сбрасывать своё состояние в Setup(): достаточно
-// объявить поля с значениями по умолчанию прямо в классе (см. CalcApp,
-// FileManagerApp, World3DApp).
-//
-// `active` — указатель на реально работающий экземпляр. Для AutoStart-
-// приложений (Home, TV) он совпадает с prototype и создаётся один раз
-// при старте прошивки: такие приложения "всегда включены" и не имеют
-// сценария повторного запуска. Для остальных — создаётся при нажатии
-// BtnA и уничтожается сразу после Exit().
 struct AppSlot {
-  AppSlot() : create(nullptr), prototype(nullptr), active(nullptr) {}
-  AppSlot(App* (*factory)()) : create(factory), prototype(nullptr), active(nullptr) {}
-
   App* (*create)();
-  App* prototype;
+  const char* (*getName)();
+  const char* (*startPrompt)();
+  bool (*autoStart)();
   App* active;
 };
 
+template<typename T>
+constexpr AppSlot MakeAppSlot() {
+  return AppSlot{
+    []() -> App* { return new T(); },
+    &T::GetName,
+    &T::StartPrompt,
+    &T::AutoStart,
+    nullptr
+  };
+}
+
 AppSlot appSlots[] = {
-  AppSlot([]() -> App* { return new HomeApp(); }),
-  AppSlot([]() -> App* { return new FileManagerApp(); }),
-  AppSlot([]() -> App* { return new ServerFrontendApp(); }),
-  AppSlot([]() -> App* { return new TvbGoneApp(); }),
-  AppSlot([]() -> App* { return new CalcApp(); }),
-  AppSlot([]() -> App* { return new World3DApp(); }),
-  AppSlot([]() -> App* { return new SettingsApp(); }),
+  MakeAppSlot<HomeApp>(),
+  MakeAppSlot<FileManagerApp>(),
+  MakeAppSlot<ServerFrontendApp>(),
+  MakeAppSlot<TvbGoneApp>(),
+  MakeAppSlot<CalcApp>(),
+  MakeAppSlot<World3DApp>(),
+  MakeAppSlot<SettingsApp>(),
 };
 const byte appCount = sizeof(appSlots) / sizeof(appSlots[0]);
 
@@ -67,14 +58,12 @@ void setup() {
 
   StickCP2.Display.setRotation(3);
 
-  // Каждому слоту заводим постоянный "прототип" — он живёт всё время
-  // работы прошивки и никогда не проходит Setup()/Loop() сам по себе,
-  // за исключением AutoStart-приложений, для которых prototype и есть
-  // единственный работающий экземпляр (см. комментарий к AppSlot выше).
+  // AutoStart-приложения (Home, TV) запускаем один раз прямо здесь —
+  // созданный экземпляр и есть единственный работающий на всё время
+  // работы прошивки (см. комментарий к AppSlot выше).
   for (auto &slot : appSlots) {
-    slot.prototype = slot.create();
-    if (slot.prototype->AutoStart()) {
-      slot.active = slot.prototype;
+    if (slot.autoStart()) {
+      slot.active = slot.create();
     }
   }
 
@@ -87,25 +76,26 @@ void handleLauncher() {
 
   if (modalRunning) {
     if (!slot.active->Loop()) {
+      StickCP2.update();
+      displayClear();
+      updateActivity();
       slot.active->Exit();
-      if (slot.active != slot.prototype) {
-        delete slot.active;
-      }
+      delete slot.active;
       slot.active = nullptr;
       modalRunning = false;
     }
     return;
   }
 
-  if (slot.prototype->AutoStart()) {
+  if (slot.autoStart()) {
     slot.active->Loop();
     return;
   }
 
   // Приложение ещё не запущено: показываем приглашение и ждём BtnA.
-  displayBigText(slot.prototype->StartPrompt());
+  displayBigText(slot.startPrompt());
   if (StickCP2.BtnA.wasPressed()) {
-    StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+    displayClear();
     displayBigText("work...");
     slot.active = slot.create();
     slot.active->Setup();
@@ -127,7 +117,7 @@ void displayAppName(const char* name) {
 
 void displayDockPanel() {
   printTime(false);
-  displayAppName(appSlots[selectedIndex].prototype->GetName());
+  displayAppName(appSlots[selectedIndex].getName());
   printBattery();
 
   drawIdleTimerBar();

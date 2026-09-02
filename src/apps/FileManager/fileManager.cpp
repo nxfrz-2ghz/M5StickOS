@@ -96,9 +96,14 @@ int getUsagePercentage() {
     return (used * 100) / total;
 }
 
-const char* FileManagerApp::StartPrompt() const {
-    snprintf(startPromptBuf, sizeof(startPromptBuf), "FULL: %d%%", getUsagePercentage());
-    return startPromptBuf;
+const char* FileManagerApp::StartPrompt() {
+    // StartPrompt() — static и вызывается каждый кадр, пока висит экран
+    // "нажмите A", поэтому обычный String означал бы аллокацию на каждый
+    // кадр. Буфер — static-локальная переменная функции: живёт между
+    // вызовами точно так же, как раньше жило mutable-поле объекта.
+    static char buf[24];
+    snprintf(buf, sizeof(buf), "FULL: %d%%", getUsagePercentage());
+    return buf;
 }
 
 void FileManagerApp::Setup() {

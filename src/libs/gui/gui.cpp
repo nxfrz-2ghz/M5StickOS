@@ -2,6 +2,11 @@
 #include "gui.h"
 
 
+void displayClear() {
+  StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+}
+
+
 void displayBigText(const char* text) {
   StickCP2.Display.startWrite();
   StickCP2.Display.setFont(&fonts::FreeSansBold18pt7b);
@@ -39,6 +44,29 @@ void displayList(const char* title, const std::vector<String> &list, int selIdx)
   displayText(output.c_str());
 }
 
+static int lastBarWidth = -1;
+void displayProgressBar(float progress, int barHeight) {
+  int totalWidth = StickCP2.Display.width();
+  int barWidth = (int)(totalWidth * progress);
+  int barY = StickCP2.Display.height() - barHeight;
+
+  // Рисуем только если ширина изменилась
+  if (barWidth != lastBarWidth) {
+    // Закрашиваем только "исчезнувшую" часть полоски черным
+    if (barWidth < lastBarWidth) {
+      StickCP2.Display.fillRect(barWidth, barY, totalWidth - barWidth, barHeight, BLACK);
+    }
+
+    // Определяем цвет в зависимости от прогресса
+    uint16_t barColor = (progress > 0.5) ? TFT_GREEN : (progress > 0.25 ? TFT_YELLOW : TFT_RED);
+    
+    // Рисуем саму полоску
+    StickCP2.Display.fillRect(0, barY, barWidth, barHeight, barColor);
+
+    lastBarWidth = barWidth;
+  }
+}
+
 // Menu navigation: change selected index
 int updateMenuSelection(int index, const int max) {
   // Next
@@ -48,7 +76,7 @@ int updateMenuSelection(int index, const int max) {
       index = max - 1;
     }
     else{ // Update Screen
-      StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+      displayClear();
     }
   }
   // Previous
@@ -58,7 +86,7 @@ int updateMenuSelection(int index, const int max) {
       index = 0;
     }
     else{ // Update Screen
-      StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+      displayClear();
     }
   }
 
@@ -73,7 +101,7 @@ int updateMenuSelectionFast(int index, const int max) {
       index = max - 1;
     }
     else{ // Update Screen
-      StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+      displayClear();
     }
   }
   // Previous
@@ -83,7 +111,7 @@ int updateMenuSelectionFast(int index, const int max) {
       index = 0;
     }
     else{ // Update Screen
-      StickCP2.Display.fillRect(0, 0, StickCP2.Display.width(), StickCP2.Display.height(), BLACK);
+      displayClear();
     }
   }
   delay(20);

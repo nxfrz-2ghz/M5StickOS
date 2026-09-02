@@ -4,7 +4,8 @@
 
 class HomeApp : public App {
 public:
-    const char* GetName() const override { return "Home"; }
+    static const char* GetName() { return "Home"; }
+    static bool AutoStart() { return true; }
+
     bool Loop() override;
-    bool AutoStart() const override { return true; }
 };
