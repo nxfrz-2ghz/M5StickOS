@@ -1,19 +1,16 @@
-#include "M5StickCPlus2.h"
 #include <LittleFS.h>
 #include "../../libs/gui/gui.h"
 #include "fileReader.h"
 
-static String fileContent = "";
-static std::vector<String> lines;
+void FileReaderApp::SetFile(const String& value) {
+    filename = value;
+}
 
-static int currentLine = 0;
-static int maxScroll = 0;
-
-static void splitLines(const String &text) {
+void FileReaderApp::splitLines(const String& text) {
     lines.clear();
-    String temp = "";
+    String temp;
 
-    for (int i = 0; i < text.length(); i++) {
+    for (int i = 0; i < text.length(); ++i) {
         char c = text[i];
 
         if (c == '\n') {
@@ -21,10 +18,10 @@ static void splitLines(const String &text) {
             temp = "";
             continue;
         }
-        
+
         temp += c;
-        
-         if (temp.length() >= charsPerLine) {
+
+        if (temp.length() >= charsPerLine) {
             lines.push_back(temp);
             temp = "";
         }
@@ -34,30 +31,35 @@ static void splitLines(const String &text) {
         lines.push_back(temp);
     }
 
-    maxScroll = lines.size() - linesPerPage;
-    if (maxScroll < 0) {maxScroll = 0;}
+    maxScroll = static_cast<int>(lines.size()) - linesPerPage;
+    if (maxScroll < 0) {
+        maxScroll = 0;
+    }
 }
 
-
-
-static void renderPage() {
-    String output = "";
+void FileReaderApp::renderPage() {
+    String output;
     int endLine = currentLine + linesPerPage;
 
-    if (endLine > lines.size()) {
+    if (endLine > static_cast<int>(lines.size())) {
         endLine = lines.size();
     }
 
-    for (int i = currentLine; i < endLine; i++) {
-        output += lines[i] + "\n";
+    for (int i = currentLine; i < endLine; ++i) {
+        output += lines[i];
+        output += '\n';
     }
 
     displayText(output.c_str());
 }
 
+void FileReaderApp::Setup() {
+    opened = false;
+    fileContent = "";
+    lines.clear();
+    currentLine = 0;
+    maxScroll = 0;
 
-
-void openTextFile(const String &filename) {
     String path = filename.startsWith("/") ? filename : "/" + filename;
     File file = LittleFS.open(path, FILE_READ);
 
@@ -67,32 +69,23 @@ void openTextFile(const String &filename) {
         return;
     }
 
-    fileContent = "";
-
     while (file.available()) {
-        fileContent += (char)file.read();
+        fileContent += static_cast<char>(file.read());
     }
 
     file.close();
 
     splitLines(fileContent);
-
-    currentLine = 0;
-
+    opened = true;
     renderPage();
 }
 
-
-
-bool loopFileReader() {
-
-    // Exit
-    if (StickCP2.BtnA.wasPressed()) {
+bool FileReaderApp::Loop() {
+    if (!opened || StickCP2.BtnA.wasPressed()) {
         return false;
     }
 
     int oldLine = currentLine;
-
     currentLine = updateMenuSelectionFast(currentLine, maxScroll + 1);
 
     if (oldLine != currentLine) {
@@ -100,4 +93,12 @@ bool loopFileReader() {
     }
 
     return true;
+}
+
+void FileReaderApp::Exit() {
+    fileContent = "";
+    lines.clear();
+    currentLine = 0;
+    maxScroll = 0;
+    opened = false;
 }

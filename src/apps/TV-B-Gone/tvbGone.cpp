@@ -1,5 +1,3 @@
-#include "M5StickCPlus2.h"
-
 #define SEND_PWM_BY_TIMER
 #include <IRremote.hpp>
 
@@ -151,10 +149,6 @@ void TvbGoneApp::Setup() {
 }
 
 bool TvbGoneApp::Loop() {
-    // Отмена — проверяем ДО отправки следующего кода. Раньше эта проверка
-    // шла ПОСЛЕ sendSingleCode()/currentIndex++, поэтому при отмене
-    // отправлялся ещё один "лишний" код прежде, чем приложение
-    // останавливалось.
     if (StickCP2.BtnPWR.wasPressed()) {
       displayClear();
       displayBigText("CANCELED!");
@@ -168,13 +162,6 @@ bool TvbGoneApp::Loop() {
     currentIndex++;
 
     if (currentIndex >= totalCodes) {
-      // Важно: сначала finished = true и отрисовка "Complete" — и только
-      // потом blinkDoneIndicator(). Раньше finished выставлялся ПОСЛЕ
-      // displayProgress(), поэтому на последнем кадре ещё рисовалось
-      // "Done: N/N", а на СЛЕДУЮЩЕМ кадре Loop() успевал обратиться к
-      // codesList[currentIndex] за пределами массива (currentIndex уже
-      // равен totalCodes) — неопределённое поведение/зависание раньше,
-      // чем вообще доходило до отрисовки "Complete".
       finished = true;
       displayProgress();
       blinkDoneIndicator();

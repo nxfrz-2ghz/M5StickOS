@@ -1,10 +1,7 @@
-#include "M5StickCPlus2.h"
 #include <LittleFS.h>
 #include <vector>
 #include <cstdio>
 #include "../../libs/gui/gui.h"
-#include "../FileReader/fileReader.h"
-#include "../FileViewer/fileViewer.h"
 #include "fileManager.h"
 
 bool FileManagerApp::isImageFile(const String &filename) const {
@@ -61,10 +58,12 @@ void FileManagerApp::handleAction() {
     if (optionIndex == 0) {
         const String &filename = filesList[selectedIndex];
         if (isImageFile(filename)) {
-            openImageFile(filename);
+            viewer.SetFile(filename);
+            viewer.Setup();
             currentState = IMAGE_VIEWER;
         } else {
-            openTextFile(filename);
+            reader.SetFile(filename);
+            reader.Setup();
             currentState = READER;
         }
         return;
@@ -117,7 +116,8 @@ void FileManagerApp::Setup() {
 
 bool FileManagerApp::Loop() {
     if (currentState == READER) {
-        if (!loopFileReader()) {
+        if (!reader.Loop()) {
+            reader.Exit();
             currentState = LIST;
             displayUI();
         }
@@ -125,7 +125,8 @@ bool FileManagerApp::Loop() {
     }
 
     if (currentState == IMAGE_VIEWER) {
-        if (!loopImageViewer()) {
+        if (!viewer.Loop()) {
+            viewer.Exit();
             currentState = LIST;
             displayUI();
         }

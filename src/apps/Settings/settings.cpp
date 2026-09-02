@@ -34,3 +34,11 @@ static std::unordered_map<std::string, ConfigValue> settingsList = {
 static byte selectedIndex = 0;
 
 // TODO: just show settings (use gui display list and update menu selection)
+
+bool SettingsApp::Loop() {
+    if (StickCP2.BtnPWR.wasPressed()) {
+        return false;
+    }
+
+    return true;
+}

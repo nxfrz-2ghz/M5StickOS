@@ -2,11 +2,9 @@
 
 #include "../App.h"
 
-// TODO: ещё не реализовано полноценно (см. settings.cpp) — сейчас не
-// зарегистрировано в main.cpp / apps list.
 class SettingsApp : public App {
 public:
     static const char* GetName() { return "Settings"; }
 
-    bool Loop() override { return true; }
+    bool Loop() override;
 };

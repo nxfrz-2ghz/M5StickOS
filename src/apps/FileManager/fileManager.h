@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../App.h"
+#include "../FileReader/fileReader.h"
+#include "../FileViewer/fileViewer.h"
 #include <vector>
 #include <Arduino.h>
 
@@ -31,6 +33,8 @@ private:
     std::vector<String> filesList;
     ManagerState currentState = LIST;
     std::vector<String> options;
+    FileReaderApp reader;
+    FileViewerApp viewer;
     int selectedIndex = 0;
     int optionIndex = 0;
 };

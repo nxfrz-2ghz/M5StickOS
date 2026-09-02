@@ -1,4 +1,3 @@
-#include "M5StickCPlus2.h"
 #include "serverFrontendApp.h"
 #include "serverBackendTask.h"
 #include "../TaskManager.h"

@@ -1,4 +1,3 @@
-#include <M5StickCPlus2.h>
 #include "calc.h"
 #include "../../libs/gui/gui.h"
 
