@@ -2,7 +2,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
-#include "../../libs/preferences/prefs.h"
+#include "../../core/preferences/prefs.h"
 #include "serverBackendTask.h"
 
 // ─────────────────────────────────────────

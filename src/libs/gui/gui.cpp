@@ -36,7 +36,7 @@ void displayList(const char* title, const std::vector<String> &list, int selIdx)
   else {
     for (int i = 0; i < list.size(); i++) {
       if (selIdx >= 0) {
-        output += (i == selIdx ? "> " : "  ");
+        output += (i == selIdx ? "> " : "");
       }
       output += list[i] + "\n";
     }
@@ -44,27 +44,16 @@ void displayList(const char* title, const std::vector<String> &list, int selIdx)
   displayText(output.c_str());
 }
 
-static int lastBarWidth = -1;
 void displayProgressBar(float progress, int barHeight) {
   int totalWidth = StickCP2.Display.width();
   int barWidth = (int)(totalWidth * progress);
   int barY = StickCP2.Display.height() - barHeight;
+  
+  StickCP2.Display.fillRect(barWidth, barY, totalWidth - barWidth, barHeight, BLACK);
 
-  // Рисуем только если ширина изменилась
-  if (barWidth != lastBarWidth) {
-    // Закрашиваем только "исчезнувшую" часть полоски черным
-    if (barWidth < lastBarWidth) {
-      StickCP2.Display.fillRect(barWidth, barY, totalWidth - barWidth, barHeight, BLACK);
-    }
-
-    // Определяем цвет в зависимости от прогресса
-    uint16_t barColor = (progress > 0.5) ? TFT_GREEN : (progress > 0.25 ? TFT_YELLOW : TFT_RED);
+  uint16_t barColor = (progress > 0.6) ? TFT_GREEN : (progress > 0.3 ? TFT_YELLOW : TFT_RED);
     
-    // Рисуем саму полоску
-    StickCP2.Display.fillRect(0, barY, barWidth, barHeight, barColor);
-
-    lastBarWidth = barWidth;
-  }
+  StickCP2.Display.fillRect(0, barY, barWidth, barHeight, barColor);
 }
 
 // Menu navigation: change selected index
@@ -93,7 +82,7 @@ int updateMenuSelection(int index, const int max) {
   return index;
 }
 
-int updateMenuSelectionFast(int index, const int max) {
+int updateMenuSelectionFast(int index, const int max, const int updateDelay) {
   // Next
   if (StickCP2.BtnB.isPressed()) {
     index = index + 1;
@@ -114,7 +103,7 @@ int updateMenuSelectionFast(int index, const int max) {
       displayClear();
     }
   }
-  delay(20);
+  delay(updateDelay);
 
   return index;
 }

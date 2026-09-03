@@ -1,43 +1,52 @@
 #include "settings.h"
 
-#include <string>
-#include <unordered_map>
+#include "../../libs/gui/gui.h"
 
-#include "../../libs/preferences/prefs.h"
+void SettingsApp::renderPage() {
+    std::vector<String> displayLines;
+    displayLines.reserve(settingsCount);
 
-#include "../WebServer/serverBackendTask.h"
+    for (size_t i = 0; i < settingsCount; i++) {
+        byte offset = (selectedIndex + i) % settingsCount;
+        String line = String(settingKeys[offset].data(), settingKeys[offset].size());
+        
+        switch (settingValues[i].type) {
+            case ConfigValue::TYPE_BOOL:
+                line += ": " + String(settingValues[offset].bVal ? "ON" : "OFF");
+                break;
+            case ConfigValue::TYPE_INT:
+                line += ": " + String(settingValues[offset].iVal);
+                break;
+            case ConfigValue::TYPE_STRING:
+                if (settingValues[offset].sVal.length() > 0) {
+                    line += ": " + settingValues[offset].sVal;
+                }
+                // Строка значения пуста - значит это заголовок
+                else {
+                    line = "--- " + line + " ---";
+                }
+                break;
+        }
+        displayLines.push_back(line);
+    }
 
-struct ConfigValue {
-    enum Type { TYPE_BOOL, TYPE_INT, TYPE_STRING } type;
-    bool bVal = false;
-    int iVal = 0;
-    String sVal = "";
+    displayList("--- SETTINGS ---", displayLines, selectedIndex);
+}
 
-    ConfigValue() : type(TYPE_BOOL), bVal(false) {}
-    ConfigValue(bool value) : type(TYPE_BOOL), bVal(value) {}
-    ConfigValue(int value) : type(TYPE_INT), iVal(value) {}
-    ConfigValue(const String& value) : type(TYPE_STRING), sVal(value) {}
-    ConfigValue(const char* value) : type(TYPE_STRING), sVal(value ? String(value) : String()) {}
-};
-
-static std::unordered_map<std::string, ConfigValue> settingsList = {
-    {"Brightness", prefGetInt("brightness", 100)},
-    {"NETWORK", ConfigValue("")},
-    {"STA SSID", prefGetString(KEY_STA_SSID, DEFAULT_STA_SSID)},
-    {"STA PASS", prefGetString(KEY_STA_PASS, DEFAULT_STA_PASS)},
-    {"WEB_SERVER", ConfigValue("")},
-    {"AP SSID", prefGetString(KEY_AP_SSID, DEFAULT_AP_SSID)},
-    {"AP PASS", prefGetString(KEY_AP_PASS, DEFAULT_AP_PASS)},
-    {"IS_AP_OR_STA", prefGetInt(KEY_SERVER_MODE, DEFAULT_MODE)},
-};
-
-static byte selectedIndex = 0;
-
-// TODO: just show settings (use gui display list and update menu selection)
+void SettingsApp::Setup() {
+    displayClear();
+    renderPage();
+}
 
 bool SettingsApp::Loop() {
-    if (StickCP2.BtnPWR.wasPressed()) {
+    if (StickCP2.BtnPWR.wasPressed() && selectedIndex == 0) {
         return false;
+    }
+    byte lastIndex = selectedIndex;
+    selectedIndex = updateMenuSelection(selectedIndex, settingsCount);
+
+    if (selectedIndex != lastIndex) {
+        renderPage();
     }
 
     return true;

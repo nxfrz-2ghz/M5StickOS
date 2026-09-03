@@ -1,16 +1,18 @@
 #include "M5StickCPlus2.h"
+
 #include "libs/gui/gui.h"
 #include "libs/gui/activityCheck.h"
 #include "libs/gui/printTime.h"
 #include "libs/gui/printBattery.h"
 #include "apps/App.h"
-#include "apps/TaskManager.h"
-#include "apps/Home/Home.h"
+#include "core/taskManager/tskmng.h"
+
+#include "apps/Home/home.h"
 #include "apps/FileManager/fileManager.h"
 #include "apps/WebServer/serverFrontendApp.h"
 #include "apps/TV-B-Gone/tvbGone.h"
 #include "apps/Calc/calc.h"
-#include "apps/World3D/World3D.h"
+#include "apps/World3D/world3D.h"
 #include "apps/Settings/settings.h"
 
 
@@ -18,7 +20,7 @@ struct AppSlot {
   App* (*create)();
   const char* (*getName)();
   const char* (*startPrompt)();
-  bool (*autoStart)();
+  const bool (*autoStart)();
   App* active;
 };
 
@@ -45,7 +47,7 @@ AppSlot appSlots[] = {
 const byte appCount = sizeof(appSlots) / sizeof(appSlots[0]);
 
 byte selectedIndex = 0;
-bool modalRunning = false;
+bool appRunning = false;
 
 
 void setup() {
@@ -57,10 +59,7 @@ void setup() {
   pinMode(IR_TX_PIN, OUTPUT);
 
   StickCP2.Display.setRotation(3);
-
-  // AutoStart-приложения (Home, TV) запускаем один раз прямо здесь —
-  // созданный экземпляр и есть единственный работающий на всё время
-  // работы прошивки (см. комментарий к AppSlot выше).
+  
   for (auto &slot : appSlots) {
     if (slot.autoStart()) {
       slot.active = slot.create();
@@ -74,7 +73,7 @@ void setup() {
 void handleLauncher() {
   AppSlot &slot = appSlots[selectedIndex];
 
-  if (modalRunning) {
+  if (appRunning) {
     if (!slot.active->Loop()) {
       StickCP2.update();
       displayClear();
@@ -82,7 +81,7 @@ void handleLauncher() {
       slot.active->Exit();
       delete slot.active;
       slot.active = nullptr;
-      modalRunning = false;
+      appRunning = false;
     }
     return;
   }
@@ -100,7 +99,7 @@ void handleLauncher() {
     slot.active = slot.create();
     slot.active->Setup();
     updateActivity();
-    modalRunning = true;
+    appRunning = true;
   }
 }
 
@@ -119,22 +118,19 @@ void displayDockPanel() {
   printTime(false);
   displayAppName(appSlots[selectedIndex].getName());
   printBattery();
-
-  drawIdleTimerBar();
 }
 
 
 void loop() {
   StickCP2.update();
 
-  // Фоновые задачи (см. apps/Task.h, apps/TaskManager.h) крутятся
-  // каждый тик независимо от того, какое приложение сейчас на экране.
   TaskManager::Instance().LoopAll();
 
   handleLauncher();
-  if (modalRunning) { return; }
+  if (appRunning) { return; }
 
   selectedIndex = updateMenuSelection(selectedIndex, appCount);
   displayDockPanel();
   activityCheck();
+  drawIdleTimerBar();
 }

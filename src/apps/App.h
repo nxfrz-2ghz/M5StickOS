@@ -11,5 +11,5 @@ struct App{
 
     static const char* GetName() { return "App"; }
     static const char* StartPrompt() { return "< START >"; }
-    static bool AutoStart() { return false; }
+    static const bool AutoStart() { return false; }
 };

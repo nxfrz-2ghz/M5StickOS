@@ -15,4 +15,4 @@ void displayList(const char* title, const std::vector<String> &list, int selecte
 void displayProgressBar(float progress, int barHeight = 3);
 
 int updateMenuSelection(int index, const int max);
-int updateMenuSelectionFast(int index, const int max);
+int updateMenuSelectionFast(int index, const int max, const int updateDelay = 50);

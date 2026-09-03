@@ -17,24 +17,15 @@
 #define KEY_STA_PASS "sta_pass"
 #define KEY_SERVER_MODE "mode"
 
-// ServerBackendTask — фоновая задача: сам веб-сервер, Wi-Fi (AP/STA) и все
-// HTTP-хендлеры. Никакого GUI здесь нет и быть не должно — задача может
-// продолжать работать, пока пользователь листает другие приложения.
-//
-// Управляет ей и показывает её состояние на экране ServerFrontendApp
-// (apps/WebServer/serverFrontendApp.h) — типичная пара "backend в фоне +
-// frontend для управления".
 class ServerBackendTask : public Task {
 public:
-    const char* GetName() const override { return "Server"; }
+    static const char* GetName() { return "Server"; }
 
     void Setup() override;
     bool Loop() override;
     void Stop() override;
 
     // --- Публичное API для frontend-приложения ---
-
-    // Переключить режим AP/STA (то же самое, что раньше делала кнопка A).
     void ToggleMode();
 
     bool IsStaMode() const { return cfg_mode; }

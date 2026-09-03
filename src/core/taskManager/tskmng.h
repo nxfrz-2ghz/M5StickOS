@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "Task.h"
+#include "../../apps/Task.h"
 
 // TaskManager — единая точка регистрации и диспетчеризации фоновых задач.
 //

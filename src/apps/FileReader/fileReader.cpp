@@ -1,6 +1,6 @@
 #include <LittleFS.h>
-#include "../../libs/gui/gui.h"
 #include "fileReader.h"
+#include "../../libs/gui/gui.h"
 
 void FileReaderApp::SetFile(const String& value) {
     filename = value;
@@ -45,7 +45,7 @@ void FileReaderApp::renderPage() {
         endLine = lines.size();
     }
 
-    for (int i = currentLine; i < endLine; ++i) {
+    for (int i = currentLine; i < endLine; i++) {
         output += lines[i];
         output += '\n';
     }
