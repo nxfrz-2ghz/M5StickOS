@@ -18,9 +18,9 @@ void CalcApp::updateScreen(){
   StickCP2.Display.print(output);
 
   // Print input menu
-  for (int y = 1; y <= linesPerPage; y++){
-    StickCP2.Display.setCursor(charsPerLine, y);
-    int indexOnY = selectedIndex - linesPerPage + y;
+  for (int y = 1; y <= displayTextLinesPerPage; y++){
+    StickCP2.Display.setCursor(displayTextCharsPerLine, y);
+    int indexOnY = selectedIndex - displayTextLinesPerPage + y;
     if (indexOnY >= 0){
       StickCP2.Display.print(KeyboardData[indexOnY]);
     }

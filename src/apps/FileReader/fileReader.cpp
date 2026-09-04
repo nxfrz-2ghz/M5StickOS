@@ -21,7 +21,7 @@ void FileReaderApp::splitLines(const String& text) {
 
         temp += c;
 
-        if (temp.length() >= charsPerLine) {
+        if (temp.length() >= displayTextCharsPerLine) {
             lines.push_back(temp);
             temp = "";
         }
@@ -31,7 +31,7 @@ void FileReaderApp::splitLines(const String& text) {
         lines.push_back(temp);
     }
 
-    maxScroll = static_cast<int>(lines.size()) - linesPerPage;
+    maxScroll = static_cast<int>(lines.size()) - displayTextLinesPerPage;
     if (maxScroll < 0) {
         maxScroll = 0;
     }
@@ -39,7 +39,7 @@ void FileReaderApp::splitLines(const String& text) {
 
 void FileReaderApp::renderPage() {
     String output;
-    int endLine = currentLine + linesPerPage;
+    int endLine = currentLine + displayTextLinesPerPage;
 
     if (endLine > static_cast<int>(lines.size())) {
         endLine = lines.size();

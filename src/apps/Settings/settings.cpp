@@ -6,34 +6,35 @@ void SettingsApp::renderPage() {
     std::vector<String> displayLines;
     displayLines.reserve(settingsCount);
 
-    for (size_t i = 0; i < settingsCount; i++) {
-        byte offset = (selectedIndex + i) % settingsCount;
-        String line = String(settingKeys[offset].data(), settingKeys[offset].size());
-        
+    for (size_t i = 0; i < settingsCount; ++i) {
+        String line = String(settingKeys[i].data(), settingKeys[i].size());
+
         switch (settingValues[i].type) {
             case ConfigValue::TYPE_BOOL:
-                line += ": " + String(settingValues[offset].bVal ? "ON" : "OFF");
+                line += ": " + String(settingValues[i].bVal ? "ON" : "OFF");
                 break;
             case ConfigValue::TYPE_INT:
-                line += ": " + String(settingValues[offset].iVal);
+                line += ": " + String(settingValues[i].iVal);
                 break;
             case ConfigValue::TYPE_STRING:
-                if (settingValues[offset].sVal.length() > 0) {
-                    line += ": " + settingValues[offset].sVal;
-                }
-                // Строка значения пуста - значит это заголовок
-                else {
-                    line = "--- " + line + " ---";
+                if (settingValues[i].sVal.length() > 0) {
+                    line += ": " + settingValues[i].sVal;
+                } else {
+                    line = "[[ " + line + " ]]";
                 }
                 break;
         }
+
         displayLines.push_back(line);
     }
 
-    displayList("--- SETTINGS ---", displayLines, selectedIndex);
+    // Same navigation model as FileManager: selectedIndex is the absolute
+    // index, while GUI::displayList() chooses the visible portion.
+    displayList("--- SETTINGS ---", displayLines, selectedIndex, true);
 }
 
 void SettingsApp::Setup() {
+    selectedIndex = 0;
     displayClear();
     renderPage();
 }
@@ -42,10 +43,11 @@ bool SettingsApp::Loop() {
     if (StickCP2.BtnPWR.wasPressed() && selectedIndex == 0) {
         return false;
     }
-    byte lastIndex = selectedIndex;
+
+    const byte oldIndex = selectedIndex;
     selectedIndex = updateMenuSelection(selectedIndex, settingsCount);
 
-    if (selectedIndex != lastIndex) {
+    if (oldIndex != selectedIndex) {
         renderPage();
     }
 
