@@ -1,5 +1,5 @@
 #include "M5StickCPlus2.h"
-#include "activityCheck.h"
+#include "activity_check.h"
 #include "gui.h"
 
 #define timeout 5000

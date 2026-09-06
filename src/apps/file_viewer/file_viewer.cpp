@@ -1,5 +1,6 @@
+#include "file_viewer.h"
+
 #include <vector>
-#include "fileViewer.h"
 #include "../../libs/gui/gui.h"
 
 uint16_t FileViewerApp::rgbTo565(uint8_t r, uint8_t g, uint8_t b) {

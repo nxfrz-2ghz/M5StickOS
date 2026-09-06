@@ -1,5 +1,5 @@
 #include "M5StickCPlus2.h"
-#include "printBattery.h"
+#include "print_battery.h"
 
 void printBattery() {
     uint16_t mv = StickCP2.Power.getBatteryVoltage();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../App.h"
+#include "../app.h"
 #include <vector>
 
 class CalcApp : public App {

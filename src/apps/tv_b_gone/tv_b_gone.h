@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../App.h"
-#include "worldIrCodes.h"
+#include "../app.h"
+#include "world_ir_codes.h"
 
 class TvbGoneApp : public App {
 public:

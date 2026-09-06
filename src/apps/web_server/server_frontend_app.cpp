@@ -1,6 +1,6 @@
-#include "serverFrontendApp.h"
-#include "serverBackendTask.h"
-#include "../../core/taskManager/tskmng.h"
+#include "server_frontend_app.h"
+#include "server_backend_task.h"
+#include "../../core/task_manager/task_manager.h"
 #include "../../libs/gui/gui.h"
 
 // Регистрируем фабрику задачи один раз при первом обращении к этому файлу.

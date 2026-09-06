@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../App.h"
+#include "../app.h"
 
 class HomeApp : public App {
 public:

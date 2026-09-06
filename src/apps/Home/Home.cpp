@@ -1,5 +1,5 @@
-#include "Home.h"
-#include "../../libs/gui/printTime.h"
+#include "home.h"
+#include "../../libs/gui/print_time.h"
 
 bool HomeApp::Loop() {
     printTime(true);

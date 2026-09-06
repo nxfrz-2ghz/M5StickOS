@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../App.h"
-#include "../FileReader/fileReader.h"
-#include "../FileViewer/fileViewer.h"
+#include "../app.h"
+#include "../file_reader/file_reader.h"
+#include "../file_viewer/file_viewer.h"
 #include <vector>
 #include <Arduino.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../App.h"
-#include "../WebServer/serverBackendTask.h"
+#include "../app.h"
+#include "../web_server/server_backend_task.h"
 #include "../../core/preferences/prefs.h"
 
 class SettingsApp : public App {

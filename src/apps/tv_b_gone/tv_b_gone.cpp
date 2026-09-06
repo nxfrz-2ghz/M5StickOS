@@ -1,8 +1,7 @@
 #define SEND_PWM_BY_TIMER
 #include <IRremote.hpp>
 
-#include "worldIrCodes.h"
-#include "tvbGone.h"
+#include "tv_b_gone.h"
 #include "../../libs/gui/gui.h"
 
 namespace {

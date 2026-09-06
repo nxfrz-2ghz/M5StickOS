@@ -1,19 +1,19 @@
 #include "M5StickCPlus2.h"
 
 #include "libs/gui/gui.h"
-#include "libs/gui/activityCheck.h"
-#include "libs/gui/printTime.h"
-#include "libs/gui/printBattery.h"
-#include "apps/App.h"
-#include "core/taskManager/tskmng.h"
+#include "libs/gui/activity_check.h"
+#include "libs/gui/print_time.h"
+#include "libs/gui/print_battery.h"
+#include "apps/app.h"
+#include "core/task_manager/task_manager.h"
 
-#include "apps/Home/home.h"
-#include "apps/FileManager/fileManager.h"
-#include "apps/WebServer/serverFrontendApp.h"
-#include "apps/TV-B-Gone/tvbGone.h"
-#include "apps/Calc/calc.h"
-#include "apps/World3D/world3D.h"
-#include "apps/Settings/settings.h"
+#include "apps/home/home.h"
+#include "apps/file_manager/file_manager.h"
+#include "apps/web_server/server_frontend_app.h"
+#include "apps/tv_b_gone/tv_b_gone.h"
+#include "apps/calc/calc.h"
+#include "apps/world_3d/world_3d.h"
+#include "apps/settings/settings.h"
 
 
 struct AppSlot {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../App.h"
+#include "../app.h"
 #include <cstdint>
 
 class World3DApp : public App {
