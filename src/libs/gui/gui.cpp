@@ -145,27 +145,76 @@ int updateMenuSelectionFast(int index, const int max, const int updateDelay) {
     return 0;
   }
 
-  // Next
-  if (StickCP2.BtnB.isPressed()) {
-    index = index + 1;
-    if (index >= max) {
-      index = max - 1;
+  // Внешние статические переменные для отслеживания состояний
+  static unsigned long btnPressedTime = 0;   // Время, когда кнопку начали удерживать
+  static unsigned long lastStepTime = 0;      // Время последнего шага (изменения индекса)
+  static bool isHolding = false;              // Флаг, удерживается ли кнопка
+  static int lastPressedBtn = 0;              // 0 - никто, 1 - BtnB, 2 - BtnPWR
+
+  // Настройки таймингов
+  const unsigned long initialDelay = 500;     // Ожидание перед стартом автоповтора
+  const unsigned long minDelay = 50;          // Максимальная скорость
+  const unsigned long accelerationSteps = 10; // Скорость ускорения
+
+  // Считываем текущее состояние кнопок
+  bool nextPressed = StickCP2.BtnB.isPressed();
+  bool prevPressed = StickCP2.BtnPWR.isPressed();
+  unsigned long currentTime = millis();
+
+  // Определяем, какая именно кнопка активна сейчас
+  int currentBtn = 0;
+  if (nextPressed) currentBtn = 1;
+  else if (prevPressed) currentBtn = 2;
+
+  // ЛОГИКА 1: Кнопку только что нажали (первое нажатие)
+  if (currentBtn != 0 && lastPressedBtn == 0) {
+    lastPressedBtn = currentBtn;
+    btnPressedTime = currentTime;
+    lastStepTime = currentTime;
+    isHolding = false;
+
+    // Сразу делаем первый шаг
+    if (currentBtn == 1 && index < max - 1) { index++; displayClear(); }
+    else if (currentBtn == 2 && index > 0) { index--; displayClear(); }
+    return index;
+  }
+
+  // ЛОГИКА 2: Кнопку отпустили или сменили на другую
+  if (currentBtn == 0 || currentBtn != lastPressedBtn) {
+    lastPressedBtn = currentBtn; // Сбрасываем или переключаем
+    isHolding = false;
+    return index;
+  }
+
+  // ЛОГИКА 3: Кнопка удерживается
+  if (currentBtn == lastPressedBtn) {
+    // Проверяем, прошли ли стартовые 500 мс удержания
+    if (!isHolding) {
+      if (currentTime - btnPressedTime >= initialDelay) {
+        isHolding = true;
+        lastStepTime = currentTime; // Начинаем отсчет шагов автоповтора
+      }
+      return index; // Еще ждем 500 мс
     }
-    else {
-      displayClear();
+
+    // Если мы уже в режиме автоповтора, считаем текущую динамическую задержку
+    // Время удержания после первых 500 мс
+    unsigned long holdDuration = currentTime - btnPressedTime - initialDelay; 
+    
+    // Формула ускорения: плавно уменьшаем updateDelay с течением времени удержания
+    long dynamicDelay = (long)updateDelay - (long)(holdDuration / accelerationSteps);
+    if (dynamicDelay < (long)minDelay) {
+      dynamicDelay = minDelay; // Ограничиваем максимальную скорость
+    }
+
+    // Проверяем, пора ли делать следующий шаг с учетом динамической задержки
+    if (currentTime - lastStepTime >= (unsigned long)dynamicDelay) {
+      lastStepTime = currentTime;
+
+      if (currentBtn == 1 && index < max - 1) { index++; displayClear(); }
+      else if (currentBtn == 2 && index > 0) { index--; displayClear(); }
     }
   }
-  // Previous
-  else if (StickCP2.BtnPWR.isPressed()) {
-    index = index - 1;
-    if (index < 0) {
-      index = 0;
-    }
-    else {
-      displayClear();
-    }
-  }
-  delay(updateDelay);
 
   return index;
 }
