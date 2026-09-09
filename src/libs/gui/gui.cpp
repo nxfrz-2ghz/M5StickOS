@@ -109,69 +109,30 @@ void displayProgressBar(float progress, int barHeight) {
 }
 
 // Menu navigation: change selected index
-int updateMenuSelection(int index, const int max) {
+int updateMenuSelection(int index, const int max, const int updateDelay) {
   if (max <= 0) {
     return 0;
   }
+  
+  const unsigned long initialDelay = 500;
+  const unsigned long minDelay = 50;
+  const unsigned long accelerationSteps = 30;
 
-  // Next
-  if (StickCP2.BtnB.wasPressed()) {
-    const int oldIndex = index;
-    index = index + 1;
-    if (index >= max) {
-      index = max - 1;
-    }
-    else {
-      displayClear();
-    }
-  }
-  // Previous
-  else if (StickCP2.BtnPWR.wasPressed()) {
-    const int oldIndex = index;
-    index = index - 1;
-    if (index < 0) {
-      index = 0;
-    }
-    else {
-      displayClear();
-    }
-  }
-
-  return index;
-}
-
-int updateMenuSelectionFast(int index, const int max, const int updateDelay) {
-  if (max <= 0) {
-    return 0;
-  }
-
-  // Внешние статические переменные для отслеживания состояний
   static unsigned long btnPressedTime = 0;   // Время, когда кнопку начали удерживать
-  static unsigned long lastStepTime = 0;      // Время последнего шага (изменения индекса)
-  static bool isHolding = false;              // Флаг, удерживается ли кнопка
-  static int lastPressedBtn = 0;              // 0 - никто, 1 - BtnB, 2 - BtnPWR
-
-  // Настройки таймингов
-  const unsigned long initialDelay = 500;     // Ожидание перед стартом автоповтора
-  const unsigned long minDelay = 50;          // Максимальная скорость
-  const unsigned long accelerationSteps = 10; // Скорость ускорения
-
-  // Считываем текущее состояние кнопок
-  bool nextPressed = StickCP2.BtnB.isPressed();
-  bool prevPressed = StickCP2.BtnPWR.isPressed();
+  static unsigned long lastStepTime = 0;      // Время последнего шага
   unsigned long currentTime = millis();
+  
+  static byte lastPressedBtn = 0;             // 0 - никто, 1 - BtnB, 2 - BtnPWR
+  byte currentBtn = 0;
+  
+  if (StickCP2.BtnB.isPressed()) currentBtn = 1;
+  else if (StickCP2.BtnPWR.isPressed()) currentBtn = 2;
 
-  // Определяем, какая именно кнопка активна сейчас
-  int currentBtn = 0;
-  if (nextPressed) currentBtn = 1;
-  else if (prevPressed) currentBtn = 2;
-
-  // ЛОГИКА 1: Кнопку только что нажали (первое нажатие)
+  // 1. Кнопку только что нажали (первое нажатие)
   if (currentBtn != 0 && lastPressedBtn == 0) {
     lastPressedBtn = currentBtn;
     btnPressedTime = currentTime;
     lastStepTime = currentTime;
-    isHolding = false;
 
     // Сразу делаем первый шаг
     if (currentBtn == 1 && index < max - 1) { index++; displayClear(); }
@@ -179,41 +140,33 @@ int updateMenuSelectionFast(int index, const int max, const int updateDelay) {
     return index;
   }
 
-  // ЛОГИКА 2: Кнопку отпустили или сменили на другую
+  // 2. Кнопку отпустили или сменили на другую
   if (currentBtn == 0 || currentBtn != lastPressedBtn) {
-    lastPressedBtn = currentBtn; // Сбрасываем или переключаем
-    isHolding = false;
+    lastPressedBtn = currentBtn; 
     return index;
   }
 
-  // ЛОГИКА 3: Кнопка удерживается
-  if (currentBtn == lastPressedBtn) {
-    // Проверяем, прошли ли стартовые 500 мс удержания
-    if (!isHolding) {
-      if (currentTime - btnPressedTime >= initialDelay) {
-        isHolding = true;
-        lastStepTime = currentTime; // Начинаем отсчет шагов автоповтора
-      }
-      return index; // Еще ждем 500 мс
-    }
+  // 3. Кнопка удерживается (currentBtn == lastPressedBtn)
+  // Проверяем, прошла ли стартовая задержка в 500 мс
+  if (currentTime - btnPressedTime < initialDelay) {
+    return index; // Еще ждем, ничего не делаем
+  }
 
-    // Если мы уже в режиме автоповтора, считаем текущую динамическую задержку
-    // Время удержания после первых 500 мс
-    unsigned long holdDuration = currentTime - btnPressedTime - initialDelay; 
-    
-    // Формула ускорения: плавно уменьшаем updateDelay с течением времени удержания
-    long dynamicDelay = (long)updateDelay - (long)(holdDuration / accelerationSteps);
-    if (dynamicDelay < (long)minDelay) {
-      dynamicDelay = minDelay; // Ограничиваем максимальную скорость
-    }
+  // Здесь мы уже гарантированно в режиме автоповтора (замена флагу isHolding)
+  unsigned long holdDuration = currentTime - btnPressedTime - initialDelay; 
+  
+  // Расчет динамической задержки
+  long dynamicDelay = (long)updateDelay - (long)(holdDuration / accelerationSteps);
+  if (dynamicDelay < (long)minDelay) {
+    dynamicDelay = minDelay;
+  }
 
-    // Проверяем, пора ли делать следующий шаг с учетом динамической задержки
-    if (currentTime - lastStepTime >= (unsigned long)dynamicDelay) {
-      lastStepTime = currentTime;
+  // Проверяем таймер автоповтора
+  if (currentTime - lastStepTime >= (unsigned long)dynamicDelay) {
+    lastStepTime = currentTime;
 
-      if (currentBtn == 1 && index < max - 1) { index++; displayClear(); }
-      else if (currentBtn == 2 && index > 0) { index--; displayClear(); }
-    }
+    if (currentBtn == 1 && index < max - 1) { index++; displayClear(); }
+    else if (currentBtn == 2 && index > 0) { index--; displayClear(); }
   }
 
   return index;

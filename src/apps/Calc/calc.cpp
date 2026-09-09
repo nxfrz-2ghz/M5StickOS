@@ -30,7 +30,7 @@ void CalcApp::updateScreen(){
 
 // INPUT
 char CalcApp::inputKeyboard(){
-  selectedIndex = updateMenuSelectionFast(selectedIndex, KeyboarDataSize);
+  selectedIndex = updateMenuSelection(selectedIndex, KeyboarDataSize);
 
   if (selectedIndex != lastIndex){
     updateScreen();

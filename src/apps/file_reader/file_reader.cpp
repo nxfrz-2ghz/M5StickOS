@@ -87,7 +87,7 @@ bool FileReaderApp::Loop() {
     }
 
     int oldLine = currentLine;
-    currentLine = updateMenuSelectionFast(currentLine, maxScroll + 1);
+    currentLine = updateMenuSelection(currentLine, maxScroll + 1);
 
     if (oldLine != currentLine) {
         renderPage();

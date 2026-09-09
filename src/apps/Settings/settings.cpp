@@ -45,7 +45,7 @@ bool SettingsApp::Loop() {
     }
 
     const byte oldIndex = selectedIndex;
-    selectedIndex = updateMenuSelectionFast(selectedIndex, settingsCount);
+    selectedIndex = updateMenuSelection(selectedIndex, settingsCount);
 
     if (oldIndex != selectedIndex) {
         renderPage();
