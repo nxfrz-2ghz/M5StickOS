@@ -98,7 +98,6 @@ void handleLauncher() {
     displayBigText("work...");
     slot.active = slot.create();
     slot.active->Setup();
-    updateActivity();
     appRunning = true;
   }
 }

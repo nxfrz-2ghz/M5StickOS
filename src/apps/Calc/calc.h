@@ -2,6 +2,7 @@
 
 #include "../app.h"
 #include <vector>
+#include <Arduino.h>
 
 class CalcApp : public App {
 public:
@@ -10,16 +11,27 @@ public:
     bool Loop() override;
 
 private:
+    void reset();
     void updateScreen();
-    char inputKeyboard();
+    void applyKey(char key);
+    void calculateResult();
+    String trimNumber(float value);
 
-    // Раньше это были статические переменные уровня файла — единственный
-    // на всю прошивку экземпляр состояния, который жил вечно и требовал
-    // ручного сброса в Setup() при каждом повторном запуске приложения.
-    // Теперь это обычные поля объекта: лаунчер создаёт новый CalcApp при
-    // каждом запуске (см. main.cpp), поэтому они и так каждый раз получают
-    // свои значения по умолчанию — отдельный сброс в Setup() не нужен.
-    std::vector<char> data_array;
-    int selectedIndex = 10;
-    int lastIndex = 10;
+    std::vector<String> keyboardData = {
+        "9", "8", "7", "6", "5", "4", "3", "2", "1", "0",
+        "=", "<", ".", "!", "+", "-", "*", "/", "^", "Q",
+        "M", "R", "E"
+    };
+
+    int selectedIndex = 10; // "="
+    int lastIndex = -1;
+
+    bool numnum = false;  // ввод первого или второго числа
+    bool showingResult = false;
+    bool hasError = false;
+
+    String firstinp = "0";
+    String secondinp = "0";
+    String op = "";
+    float result = 0;
 };

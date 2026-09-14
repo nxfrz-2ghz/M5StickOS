@@ -1,66 +1,148 @@
 #include "calc.h"
 #include "../../libs/gui/gui.h"
 
-// keyboard data
-static const byte KeyboarDataSize = 23;
-static const char KeyboardData[KeyboarDataSize] = {
-  '9', '8', '7', '6', '5', '4', '3', '2', '1', '0', '=', '<', '.', '!', '+', '-', '*', '/', '^', 'Q', 'M', 'R', 'E'
-};
+void CalcApp::reset() {
+    numnum = false;
+    showingResult = false;
+    hasError = false;
+    firstinp = "0";
+    secondinp = "0";
+    op = "";
+    result = 0;
+}
 
-// SCREEN
-void CalcApp::updateScreen(){
-  StickCP2.Display.fillScreen(BLACK);
-  String output = "";
-  for (char c : data_array){
-    output += c;
-  }
-  StickCP2.Display.setCursor(0, 0);
-  StickCP2.Display.print(output);
-
-  // Print input menu
-  for (int y = 1; y <= displayTextLinesPerPage; y++){
-    StickCP2.Display.setCursor(displayTextCharsPerLine, y);
-    int indexOnY = selectedIndex - displayTextLinesPerPage + y;
-    if (indexOnY >= 0){
-      StickCP2.Display.print(KeyboardData[indexOnY]);
+String CalcApp::trimNumber(float value) {
+    String s = String(value, 6);
+    if (s.indexOf('.') != -1) {
+        while (s.endsWith("0")) s.remove(s.length() - 1);
+        if (s.endsWith(".")) s.remove(s.length() - 1);
     }
-  }
+    return s;
 }
 
+void CalcApp::calculateResult() {
+    float a = firstinp.toFloat();
+    float b = secondinp.toFloat();
+    hasError = false;
 
-// INPUT
-char CalcApp::inputKeyboard(){
-  selectedIndex = updateMenuSelection(selectedIndex, KeyboarDataSize);
+    if (op == "+") result = a + b;
+    else if (op == "-") result = a - b;
+    else if (op == "*") result = a * b;
+    else if (op == "/") {
+        if (b == 0) hasError = true;
+        else result = a / b;
+    }
+    else if (op == "^") result = pow(a, b);
+    else if (op == "Q") result = sqrt(a);
 
-  if (selectedIndex != lastIndex){
-    updateScreen();
-    lastIndex = selectedIndex;
-    return KeyboardData[selectedIndex];
-  }
-
-  return 0;
+    showingResult = true;
 }
 
+void CalcApp::applyKey(char key) {
+    // После показа результата любая цифра/оператор начинают новый ввод
+    if (showingResult && key != 'R' && key != 'M') {
+        bool isOperator = (key=='+' || key=='-' || key=='*' || key=='/' || key=='^' || key=='Q');
+        if (isOperator) {
+            firstinp = hasError ? "0" : trimNumber(result);
+            secondinp = "0";
+            op = String(key);
+            numnum = true;
+            showingResult = false;
+            hasError = false;
+            return;
+        } else {
+            reset(); // и продолжаем обработку ниже как обычный ввод
+        }
+    }
 
-// MAIN
+    switch (key) {
+        case 'R':
+            reset();
+            break;
 
-bool CalcApp::Loop(){
-  char input = inputKeyboard();
-  if (input != 0){
-    data_array.push_back(input);
-  }
-  if (input == '<' && !data_array.empty()){
-    data_array.pop_back();
-  }
-  if (input == 'R'){
-    data_array.clear();
-    selectedIndex = 10;
-    lastIndex = 10;
-    updateScreen();
-  }
-  if (input == 'E'){
-    return false;
-  }
+        case 'M': {
+            String val = trimNumber(result);
+            if (!numnum) firstinp = val; else secondinp = val;
+            break;
+        }
 
-  return true;
+        case '!': {
+            String &cur = numnum ? secondinp : firstinp;
+            if (cur.startsWith("-")) cur.remove(0, 1);
+            else if (cur != "0") cur = "-" + cur;
+            break;
+        }
+
+        case '<': {
+            String &cur = numnum ? secondinp : firstinp;
+            if (cur.length() > 1) cur.remove(cur.length() - 1);
+            else cur = "0";
+            break;
+        }
+
+        case '.': {
+            String &cur = numnum ? secondinp : firstinp;
+            if (cur.indexOf('.') == -1) cur += ".";
+            break;
+        }
+
+        case '=':
+            if (op != "") calculateResult();
+            break;
+
+        case '+': case '-': case '*': case '/': case '^': case 'Q':
+            op = String(key);
+            numnum = true;
+            break;
+
+        default: // цифры 0-9
+            if (key >= '0' && key <= '9') {
+                String &cur = numnum ? secondinp : firstinp;
+                if (cur == "0") cur = String(key);
+                else cur += key;
+            }
+            break;
+    }
+}
+
+void CalcApp::updateScreen() {
+    String expr;
+    if (showingResult) {
+        expr = hasError ? "Error" : ("= " + trimNumber(result));
+    } else {
+        expr = firstinp;
+        if (op != "") expr += " " + op + " " + secondinp;
+    }
+
+    displayList(expr.c_str(), keyboardData, selectedIndex, false);
+}
+
+bool CalcApp::Loop() {
+    int newIndex = updateMenuSelection(selectedIndex, (int)keyboardData.size(), 150);
+    bool redraw = false;
+
+    if (newIndex != selectedIndex) {
+        selectedIndex = newIndex;
+        redraw = true;
+    }
+
+    if (StickCP2.BtnA.wasPressed()) {
+        char key = keyboardData[selectedIndex][0];
+
+        if (key == 'E') {
+            return false;
+        }
+
+        applyKey(key);
+        redraw = true;
+    }
+
+    if (lastIndex == -1) redraw = true; // первая отрисовка
+
+    if (redraw) {
+        updateScreen();
+        lastIndex = selectedIndex;
+    }
+
+    return true;
 }
