@@ -48,7 +48,7 @@ const byte appCount = sizeof(appSlots) / sizeof(appSlots[0]);
 
 byte selectedIndex = 0;
 bool appRunning = false;
-
+bool waitForButtonRelease = false;
 
 void setup() {
   auto cfg = M5.config();
@@ -82,6 +82,7 @@ void handleLauncher() {
       delete slot.active;
       slot.active = nullptr;
       appRunning = false;
+      waitForButtonRelease = true;
     }
     return;
   }
@@ -124,12 +125,18 @@ void loop() {
   StickCP2.update();
 
   TaskManager::Instance().LoopAll();
-
   handleLauncher();
-  if (appRunning) { return; }
 
-  selectedIndex = updateMenuSelection(selectedIndex, appCount);
+  if (appRunning) { return; }
   displayDockPanel();
   activityCheck();
   drawIdleTimerBar();
+  if (waitForButtonRelease) {
+     if (!anyButtonPressed()) {
+       waitForButtonRelease = false;
+     }
+  }
+  else {
+    selectedIndex = updateMenuSelection(selectedIndex, appCount);
+  }
 }

@@ -13,14 +13,16 @@ void drawIdleTimerBar() {
   displayProgressBar(progress);
 }
 
+bool anyButtonPressed() {
+	return (StickCP2.BtnA.isPressed() || StickCP2.BtnB.isPressed() || StickCP2.BtnPWR.isPressed());
+}
+
 void updateActivity() {
   lastActivityTime = millis();
 }
 
-
 void activityCheck() {
-  // Если нажата любая кнопка, обновляем время активности
-  if (StickCP2.BtnA.wasPressed() || StickCP2.BtnB.wasPressed() || StickCP2.BtnPWR.wasPressed()) {
+  if (anyButtonPressed()) {
     updateActivity();
   }
 
