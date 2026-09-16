@@ -6,6 +6,8 @@
 
 #include "../../libs/gui/gui.h"
 
+static const char* kUpEntryName = "..";
+
 bool FileManagerApp::isImageFile(const String &filename) const {
     String name = filename;
     name.toLowerCase();
@@ -20,27 +22,77 @@ bool FileManagerApp::isTextFile(const String &filename) const {
            name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".ino");
 }
 
+String FileManagerApp::joinPath(const String &base, const String &name) const {
+    if (base == "/") return "/" + name;
+    return base + "/" + name;
+}
+
+String FileManagerApp::parentPath(const String &path) const {
+    if (path == "/" || path.length() == 0) return "/";
+
+    String p = path;
+    if (p.endsWith("/")) p.remove(p.length() - 1);
+
+    int idx = p.lastIndexOf('/');
+    if (idx <= 0) return "/";
+    return p.substring(0, idx);
+}
+
+bool FileManagerApp::removeRecursive(const String &path) const {
+    File entry = LittleFS.open(path);
+    if (!entry) return false;
+
+    if (!entry.isDirectory()) {
+        entry.close();
+        return LittleFS.remove(path);
+    }
+
+    std::vector<String> children;
+    File child = entry.openNextFile();
+    while (child) {
+        children.push_back(String(child.name()));
+        child = entry.openNextFile();
+    }
+    entry.close();
+
+    bool ok = true;
+    for (const auto &childName : children) {
+        String childPath = joinPath(path, childName);
+        ok = removeRecursive(childPath) && ok;
+    }
+    return LittleFS.rmdir(path) && ok;
+}
+
 void FileManagerApp::updateFilesArray(const String &path) {
     filesList.clear();
+
+    if (path != "/") {
+        filesList.push_back({kUpEntryName, true});
+    }
+
     File root = LittleFS.open(path);
     if (!root || !root.isDirectory()) return;
 
     File file = root.openNextFile();
     while (file) {
-        filesList.push_back(String(file.name()));
+        filesList.push_back({String(file.name()), file.isDirectory()});
         file = root.openNextFile();
     }
+    root.close();
 }
 
 void FileManagerApp::updateOptions() {
     options.clear();
     if (filesList.empty()) {
-        options = {"Delete", "Close"};
+        options = {"Close"};
         return;
     }
 
-    const String &filename = filesList[selectedIndex];
-    if (isImageFile(filename)) {
+    const FileEntry &entry = filesList[selectedIndex];
+
+    if (entry.isDir) {
+        options = {"Open", "Delete", "Close"};
+    } else if (isImageFile(entry.name)) {
         options = {"View", "Delete", "Close"};
     } else {
         options = {"Open", "Delete", "Close"};
@@ -49,7 +101,20 @@ void FileManagerApp::updateOptions() {
 
 void FileManagerApp::displayUI() {
     if (currentState == LIST) {
-        displayList("--- Files ---", filesList, selectedIndex);
+        std::vector<String> displayNames;
+        displayNames.reserve(filesList.size());
+
+        for (const auto &entry : filesList) {
+            if (entry.name == kUpEntryName) {
+                displayNames.push_back("[..]");
+            } else if (entry.isDir) {
+                displayNames.push_back(entry.name + "/");
+            } else {
+                displayNames.push_back(entry.name);
+            }
+        }
+
+        displayList("--- Files ---", displayNames, selectedIndex);
     } else {
         updateOptions();
         displayList("Actions:", options, optionIndex);
@@ -57,24 +122,40 @@ void FileManagerApp::displayUI() {
 }
 
 void FileManagerApp::handleAction() {
+    const FileEntry entry = filesList[selectedIndex];
+
     if (optionIndex == 0) {
-        const String &filename = filesList[selectedIndex];
-        if (isImageFile(filename)) {
-            viewer.SetFile(filename);
+        if (entry.isDir) {
+            currentPath = joinPath(currentPath, entry.name);
+            updateFilesArray(currentPath);
+            selectedIndex = 0;
+            currentState = LIST;
+            displayUI();
+            return;
+        }
+
+        String fullPath = joinPath(currentPath, entry.name);
+        if (isImageFile(entry.name)) {
+            viewer.SetFile(fullPath);
             viewer.Setup();
             currentState = IMAGE_VIEWER;
         } else {
-            reader.SetFile(filename);
+            reader.SetFile(fullPath);
             reader.Setup();
             currentState = READER;
         }
         return;
-    } else if (optionIndex == 1) {
-        String fullPath = currentPath + (currentPath.endsWith("/") ? "" : "/") + filesList[selectedIndex];
-        if (LittleFS.remove(fullPath)) {
-            displayText("Deleted!");
+    } else if (optionIndex == 1 && entry.name != kUpEntryName) {
+        // Delete (для файла или папки со всем содержимым)
+        String fullPath = joinPath(currentPath, entry.name);
+        bool ok = entry.isDir ? removeRecursive(fullPath) : LittleFS.remove(fullPath);
+
+        if (ok) {
+            displayText(entry.isDir ? "Folder deleted!" : "Deleted!");
             updateFilesArray(currentPath);
-            selectedIndex = 0;
+            if (selectedIndex >= static_cast<int>(filesList.size())) {
+                selectedIndex = filesList.empty() ? 0 : static_cast<int>(filesList.size()) - 1;
+            }
         } else {
             displayText("Error delete");
         }
@@ -108,6 +189,8 @@ void FileManagerApp::Setup() {
         displayText("FS Mount Failed");
         return;
     }
+    currentPath = "/";
+    selectedIndex = 0;
     updateFilesArray(currentPath);
     displayUI();
 }
@@ -154,6 +237,17 @@ bool FileManagerApp::Loop() {
     }
 
     if (StickCP2.BtnA.wasPressed()) {
+        if (filesList[selectedIndex].name == kUpEntryName) {
+            currentPath = parentPath(currentPath);
+
+            updateFilesArray(currentPath);
+
+            selectedIndex = 0;
+            currentState = LIST;
+
+            displayUI();
+            return true;
+        }
         if (currentState == LIST && !filesList.empty()) {
             currentState = FILE_OPTIONS;
             optionIndex = 0;

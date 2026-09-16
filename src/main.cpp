@@ -1,5 +1,7 @@
 #include "M5StickCPlus2.h"
 
+#include <LittleFS.h>
+
 #include "libs/gui/gui.h"
 #include "libs/gui/activity_check.h"
 #include "libs/gui/print_time.h"
@@ -54,6 +56,8 @@ void setup() {
   auto cfg = M5.config();
   Serial.begin(115200);
   StickCP2.begin(cfg);
+
+  LittleFS.begin(true);
 
   pinMode(35, INPUT_PULLUP);
   pinMode(IR_TX_PIN, OUTPUT);

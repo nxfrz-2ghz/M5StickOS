@@ -51,6 +51,16 @@ private:
     void handleUploadImagePost();
     void handleUploadImage();
 
+    // --- Файловый менеджер ---
+    String sanitizeFsPath(const String &rawPath) const;
+    bool removeRecursiveFS(const String &path) const;
+    void handleFmList();
+    void handleFmMkdir();
+    void handleFmDelete();
+    void handleFmDownload();
+    void handleFmUploadPost();
+    void handleFmUpload();
+
     WebServer server_{80};
 
     String cfg_ap_ssid   = DEFAULT_AP_SSID;
@@ -67,4 +77,12 @@ private:
     String imageUploadSavedName_;
     size_t imageUploadBytes_ = 0;
     static const size_t kMaxImageUploadBytes = 2 * 1024 * 1024; // 2 MB
+
+    // --- Файловый менеджер: состояние загрузки произвольного файла ---
+    File fmUploadFile_;
+    String fmUploadResponse_ = "No file uploaded";
+    bool fmUploadOpen_ = false;
+    String fmUploadSavedName_;
+    size_t fmUploadBytes_ = 0;
+    static const size_t kMaxFmUploadBytes = 4 * 1024 * 1024; // 4 MB
 };

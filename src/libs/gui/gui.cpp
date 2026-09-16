@@ -1,5 +1,8 @@
+#include <LittleFS.h>
 #include "M5StickCPlus2.h"
 #include "gui.h"
+
+static const char* kCustomFontPath = "/system/font.vlw";
 
 
 void displayClear() {
@@ -19,8 +22,12 @@ void displayBigText(const char* text) {
 void displayText(const char* text) {
     StickCP2.Display.startWrite();
     StickCP2.Display.fillScreen(BLACK);
-    StickCP2.Display.setFont(&fonts::FreeSansBold12pt7b);
-    StickCP2.Display.setCursor(5, 10);
+
+    bool customLoaded = LittleFS.exists(kCustomFontPath) && StickCP2.Display.loadFont(LittleFS, kCustomFontPath);
+    if (!customLoaded) StickCP2.Display.setFont(&fonts::FreeSansBold12pt7b);
+
+    StickCP2.Display.setTextColor(WHITE, BLACK);
+    StickCP2.Display.setCursor(0, 10);
     StickCP2.Display.print(text);
     StickCP2.Display.endWrite();
 }

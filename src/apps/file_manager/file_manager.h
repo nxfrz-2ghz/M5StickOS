@@ -8,6 +8,12 @@
 
 int getUsagePercentage();
 
+// Один элемент списка: файл или папка.
+struct FileEntry {
+    String name;
+    bool isDir;
+};
+
 class FileManagerApp : public App {
 public:
     static const char* GetName() { return "Files"; }
@@ -26,8 +32,12 @@ private:
     void displayUI();
     void handleAction();
 
+    String joinPath(const String &base, const String &name) const;
+    String parentPath(const String &path) const;
+    bool removeRecursive(const String &path) const;
+
     String currentPath = "/";
-    std::vector<String> filesList;
+    std::vector<FileEntry> filesList;
     ManagerState currentState = LIST;
     std::vector<String> options;
     FileReaderApp reader;

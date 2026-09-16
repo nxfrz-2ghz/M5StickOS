@@ -4,7 +4,22 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
+#include <vector>
 #include "../../core/preferences/prefs.h"
+
+namespace {
+// Экранирование спецсимволов для вставки строки в JSON.
+String jsonEscape(const String &input) {
+    String out;
+    out.reserve(input.length());
+    for (size_t i = 0; i < input.length(); ++i) {
+        char c = input[i];
+        if (c == '"' || c == '\\') out += '\\';
+        out += c;
+    }
+    return out;
+}
+}  // namespace
 
 // ─────────────────────────────────────────
 //  Config persistence
@@ -204,6 +219,210 @@ void ServerBackendTask::handleUploadImage() {
 }
 
 // ─────────────────────────────────────────
+//  Файловый менеджер
+// ─────────────────────────────────────────
+
+// Нормализует путь: добавляет ведущий "/", убирает "..", двойные слэши
+// и завершающий слэш (кроме корня). Защищает от выхода за пределы ФС.
+String ServerBackendTask::sanitizeFsPath(const String &rawPath) const {
+    String path = rawPath;
+    if (path.length() == 0) path = "/";
+    if (!path.startsWith("/")) path = "/" + path;
+
+    while (path.indexOf("..") >= 0) {
+        path.replace("..", "");
+    }
+    while (path.indexOf("//") >= 0) {
+        path.replace("//", "/");
+    }
+    if (path.length() > 1 && path.endsWith("/")) {
+        path.remove(path.length() - 1);
+    }
+    if (path.length() == 0) path = "/";
+    return path;
+}
+
+// Рекурсивно удаляет файл или папку со всем содержимым.
+bool ServerBackendTask::removeRecursiveFS(const String &path) const {
+    File entry = LittleFS.open(path);
+    if (!entry) return false;
+
+    if (!entry.isDirectory()) {
+        entry.close();
+        return LittleFS.remove(path);
+    }
+
+    std::vector<String> children;
+    File child = entry.openNextFile();
+    while (child) {
+        String name = String(child.name());
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+        children.push_back(name);
+        child = entry.openNextFile();
+    }
+    entry.close();
+
+    bool ok = true;
+    for (const auto &name : children) {
+        String childPath = (path == "/" ? "" : path) + "/" + name;
+        ok = removeRecursiveFS(childPath) && ok;
+    }
+    return LittleFS.rmdir(path) && ok;
+}
+
+// GET /fm/list?path=/some/dir -> {"path":"...","entries":[{"name":..,"isDir":..,"size":..}, ...]}
+void ServerBackendTask::handleFmList() {
+    String path = sanitizeFsPath(server_.hasArg("path") ? server_.arg("path") : "/");
+
+    File dir = LittleFS.open(path);
+    if (!dir || !dir.isDirectory()) {
+        server_.send(404, "application/json", "{\"error\":\"not a directory\"}");
+        return;
+    }
+
+    String json = "{\"path\":\"" + jsonEscape(path) + "\",\"entries\":[";
+    bool first = true;
+    File file = dir.openNextFile();
+    while (file) {
+        String name = String(file.name());
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+
+        if (!first) json += ",";
+        first = false;
+        json += "{\"name\":\"" + jsonEscape(name) + "\",";
+        json += "\"isDir\":";
+        json += (file.isDirectory() ? "true" : "false");
+        json += ",\"size\":" + String((unsigned long)file.size()) + "}";
+
+        file = dir.openNextFile();
+    }
+    dir.close();
+    json += "]}";
+
+    server_.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server_.send(200, "application/json; charset=utf-8", json);
+}
+
+// POST /fm/mkdir  (path, name)
+void ServerBackendTask::handleFmMkdir() {
+    if (server_.method() != HTTP_POST) { server_.send(405, "text/plain", "Method Not Allowed"); return; }
+
+    String parent = sanitizeFsPath(server_.arg("path"));
+    String name = server_.arg("name");
+    name.trim();
+
+    if (name.length() == 0 || name.indexOf('/') >= 0 || name == "..") {
+        server_.send(400, "text/plain", "Bad folder name");
+        return;
+    }
+
+    String fullPath = (parent == "/" ? "" : parent) + "/" + name;
+    if (LittleFS.mkdir(fullPath)) {
+        server_.send(200, "text/plain", "Created: " + fullPath);
+    } else {
+        server_.send(500, "text/plain", "Failed to create folder");
+    }
+}
+
+// POST /fm/delete  (path)
+void ServerBackendTask::handleFmDelete() {
+    if (server_.method() != HTTP_POST) { server_.send(405, "text/plain", "Method Not Allowed"); return; }
+
+    String path = sanitizeFsPath(server_.arg("path"));
+    if (path == "/") {
+        server_.send(400, "text/plain", "Cannot delete root");
+        return;
+    }
+
+    File entry = LittleFS.open(path);
+    bool isDir = entry && entry.isDirectory();
+    if (entry) entry.close();
+
+    bool ok = isDir ? removeRecursiveFS(path) : LittleFS.remove(path);
+    if (ok) {
+        server_.send(200, "text/plain", "Deleted: " + path);
+    } else {
+        server_.send(500, "text/plain", "Failed to delete");
+    }
+}
+
+// GET /fm/download?path=/some/file.ext
+void ServerBackendTask::handleFmDownload() {
+    String path = sanitizeFsPath(server_.arg("path"));
+    File file = LittleFS.open(path, FILE_READ);
+    if (!file || file.isDirectory()) {
+        if (file) file.close();
+        server_.send(404, "text/plain", "Not found");
+        return;
+    }
+
+    String name = path;
+    int slash = name.lastIndexOf('/');
+    if (slash >= 0) name = name.substring(slash + 1);
+
+    server_.sendHeader("Content-Disposition", "attachment; filename=\"" + name + "\"");
+    server_.streamFile(file, "application/octet-stream");
+    file.close();
+}
+
+void ServerBackendTask::handleFmUploadPost() {
+    server_.send(200, "text/plain", fmUploadResponse_);
+}
+
+// POST /fm/upload?path=/target/dir  (multipart, поле "file", любое имя/тип)
+void ServerBackendTask::handleFmUpload() {
+    HTTPUpload &upload = server_.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        String dir = sanitizeFsPath(server_.hasArg("path") ? server_.arg("path") : "/");
+
+        String filename = upload.filename;
+        int slash = filename.lastIndexOf('/');
+        if (slash >= 0) filename = filename.substring(slash + 1);
+        if (filename.length() == 0) filename = "file.bin";
+
+        String fullPath = (dir == "/" ? "" : dir) + "/" + filename;
+
+        fmUploadBytes_ = 0;
+        fmUploadFile_ = LittleFS.open(fullPath, FILE_WRITE);
+        fmUploadOpen_ = (bool)fmUploadFile_;
+        fmUploadSavedName_ = fullPath;
+        fmUploadResponse_ = fmUploadOpen_ ? String("Uploading to ") + fullPath : String("Failed to open ") + fullPath;
+        Serial.printf("FM upload start: %s\n", fullPath.c_str());
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (fmUploadOpen_) {
+            fmUploadFile_.write(upload.buf, upload.currentSize);
+            fmUploadBytes_ += upload.currentSize;
+            if (fmUploadBytes_ > kMaxFmUploadBytes) {
+                fmUploadFile_.close();
+                fmUploadOpen_ = false;
+                LittleFS.remove(fmUploadSavedName_);
+                fmUploadResponse_ = "Upload too large";
+                Serial.printf("FM upload aborted: %s (exceeded %u bytes)\n", fmUploadSavedName_.c_str(), (unsigned)kMaxFmUploadBytes);
+            }
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        if (fmUploadOpen_) {
+            fmUploadFile_.close();
+            fmUploadOpen_ = false;
+            fmUploadResponse_ = String("Saved file as: ") + fmUploadSavedName_;
+            statusText_ = "File: " + fmUploadSavedName_ + "\nUploaded!";
+            Serial.printf("FM upload finished: %s (%u bytes)\n", fmUploadSavedName_.c_str(), (unsigned)fmUploadBytes_);
+        } else {
+            if (fmUploadResponse_.length() == 0) fmUploadResponse_ = "Upload failed";
+        }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        if (fmUploadOpen_) {
+            fmUploadFile_.close();
+            fmUploadOpen_ = false;
+        }
+        fmUploadResponse_ = "Upload aborted";
+    }
+}
+
+// ─────────────────────────────────────────
 //  HTML page
 // ─────────────────────────────────────────
 void ServerBackendTask::handleRoot() {
@@ -233,6 +452,21 @@ void ServerBackendTask::handleRoot() {
   .mode-badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;
     font-weight:bold;color:#fff;background:#6c757d}
   .mode-ap{background:#fd7e14}.mode-sta{background:#0d6efd}
+  .fm-toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .fm-btn{width:auto;padding:6px 12px;font-size:13px;border-radius:6px;border:1px solid #ccc;
+    background:#f8f9fa;color:#333;cursor:pointer}
+  .fm-btn:hover{background:#e9ecef}
+  .fm-btn:disabled{opacity:.4;cursor:default}
+  .fm-btn-del{color:#dc3545;border-color:#dc3545}
+  .fm-path{font-family:monospace;font-size:13px;color:#555;background:#f8f9fa;padding:6px 8px;
+    border-radius:6px;margin-bottom:8px;word-break:break-all}
+  .fm-list{border:1px solid #eee;border-radius:6px;max-height:280px;overflow-y:auto}
+  .fm-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #f0f0f0}
+  .fm-row:last-child{border-bottom:none}
+  .fm-row .fm-btn{padding:4px 9px;font-size:12px}
+  .fm-name{flex:1;word-break:break-all;font-size:14px}
+  .fm-size{font-size:12px;color:#888;white-space:nowrap}
+  .fm-empty{padding:16px;text-align:center;color:#999;font-size:13px}
 </style>
 </head>
 <body>
@@ -274,6 +508,24 @@ void ServerBackendTask::handleRoot() {
     <input type="file" id="image-file" accept="image/*">
     <button class="btn-save" onclick="uploadImage()">Загрузить и сжать</button>
     <div class="status" id="upload-status"></div>
+  </div>
+
+  <!-- ── File manager ── -->
+  <div class="card">
+    <h2>Файловый менеджер</h2>
+    <div class="fm-toolbar">
+      <button class="fm-btn" id="fm-up" onclick="fmUp()">⬆ Назад</button>
+      <button class="fm-btn" onclick="fmMkdir()">📁 Новая папка</button>
+      <button class="fm-btn" onclick="fmLoad(fmPath)">↻ Обновить</button>
+    </div>
+    <div class="fm-path" id="fm-path">/</div>
+    <div class="fm-list" id="fm-list"></div>
+    <div style="margin-top:14px">
+      <label>Загрузить файл в текущую папку</label>
+      <input type="file" id="fm-file">
+      <button class="btn-save" onclick="fmUpload()">Загрузить</button>
+      <div class="status" id="fm-upload-status"></div>
+    </div>
   </div>
 
   <!-- ── AP settings ── -->
@@ -318,6 +570,132 @@ void ServerBackendTask::handleRoot() {
 </div>
 
 <script>
+  // ── File manager ──
+  let fmPath = '/';
+
+  function fmIcon(isDir) { return isDir ? '📁' : '📄'; }
+
+  function fmJoin(base, name) {
+    return (base === '/' ? '' : base) + '/' + name;
+  }
+
+  function fmFormatSize(bytes) {
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+    return (bytes / 1024 / 1024).toFixed(2) + ' МБ';
+  }
+
+  function fmRender(data) {
+    fmPath = data.path;
+    document.getElementById('fm-path').textContent = fmPath;
+    document.getElementById('fm-up').disabled = (fmPath === '/');
+
+    const list = document.getElementById('fm-list');
+    list.innerHTML = '';
+
+    const entries = (data.entries || []).slice().sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (entries.length === 0) {
+      list.innerHTML = '<div class="fm-empty">Пусто</div>';
+      return;
+    }
+
+    entries.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'fm-row';
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'fm-name';
+      nameEl.textContent = fmIcon(e.isDir) + ' ' + e.name;
+      if (e.isDir) {
+        nameEl.style.cursor = 'pointer';
+        nameEl.onclick = () => fmLoad(fmJoin(fmPath, e.name));
+      }
+      row.appendChild(nameEl);
+
+      if (!e.isDir) {
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'fm-size';
+        sizeEl.textContent = fmFormatSize(e.size);
+        row.appendChild(sizeEl);
+
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'fm-btn';
+        dlBtn.textContent = '⬇';
+        dlBtn.title = 'Скачать';
+        dlBtn.onclick = () => { window.location.href = '/fm/download?path=' + encodeURIComponent(fmJoin(fmPath, e.name)); };
+        row.appendChild(dlBtn);
+      }
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'fm-btn fm-btn-del';
+      delBtn.textContent = '✕';
+      delBtn.title = 'Удалить';
+      delBtn.onclick = () => fmDelete(fmJoin(fmPath, e.name), e.isDir);
+      row.appendChild(delBtn);
+
+      list.appendChild(row);
+    });
+  }
+
+  function fmLoad(path) {
+    fetch('/fm/list?path=' + encodeURIComponent(path))
+      .then(r => r.json())
+      .then(fmRender)
+      .catch(() => { document.getElementById('fm-list').innerHTML = '<div class="fm-empty">Ошибка загрузки</div>'; });
+  }
+
+  function fmUp() {
+    if (fmPath === '/') return;
+    const idx = fmPath.lastIndexOf('/');
+    const parent = idx <= 0 ? '/' : fmPath.substring(0, idx);
+    fmLoad(parent);
+  }
+
+  function fmMkdir() {
+    const name = prompt('Имя новой папки:');
+    if (!name) return;
+    const p = new URLSearchParams();
+    p.append('path', fmPath);
+    p.append('name', name);
+    fetch('/fm/mkdir', { method: 'POST', body: p })
+      .then(r => r.text())
+      .then(() => fmLoad(fmPath))
+      .catch(e => alert('Ошибка: ' + e));
+  }
+
+  function fmDelete(path, isDir) {
+    const msg = (isDir ? 'Удалить папку со всем содержимым: ' : 'Удалить файл: ') + path + '?';
+    if (!confirm(msg)) return;
+    const p = new URLSearchParams();
+    p.append('path', path);
+    fetch('/fm/delete', { method: 'POST', body: p })
+      .then(r => r.text())
+      .then(() => fmLoad(fmPath))
+      .catch(e => alert('Ошибка: ' + e));
+  }
+
+  function fmUpload() {
+    const input = document.getElementById('fm-file');
+    const status = document.getElementById('fm-upload-status');
+    if (!input.files.length) { status.textContent = 'Выберите файл'; return; }
+
+    const file = input.files[0];
+    const form = new FormData();
+    form.append('file', file, file.name);
+
+    status.textContent = 'Загрузка…';
+    fetch('/fm/upload?path=' + encodeURIComponent(fmPath), { method: 'POST', body: form })
+      .then(r => r.text())
+      .then(t => { status.textContent = t; input.value = ''; fmLoad(fmPath); })
+      .catch(e => { status.textContent = 'Ошибка: ' + e; });
+  }
+
+  fmLoad('/');
+
   let timeSynced = false;
 
   function pad(n){ return String(n).padStart(2,'0'); }
@@ -665,6 +1043,13 @@ void ServerBackendTask::Setup() {
     server_.on("/getTime",    [this]() { handleGetTime(); });
     server_.on("/uploadImage", HTTP_POST, [this]() { handleUploadImagePost(); }, [this]() { handleUploadImage(); });
     server_.on("/saveConfig",  [this]() { handleSaveConfig(); });
+
+    server_.on("/fm/list",     [this]() { handleFmList(); });
+    server_.on("/fm/mkdir",    [this]() { handleFmMkdir(); });
+    server_.on("/fm/delete",   [this]() { handleFmDelete(); });
+    server_.on("/fm/download", [this]() { handleFmDownload(); });
+    server_.on("/fm/upload", HTTP_POST, [this]() { handleFmUploadPost(); }, [this]() { handleFmUpload(); });
+
     server_.onNotFound([this]() { server_.send(404, "text/plain", "Not Found"); });
 
     server_.begin();

@@ -3,6 +3,16 @@
 #include <LittleFS.h>
 #include "../../libs/gui/gui.h"
 
+namespace {
+int utf8CharLen(unsigned char leadByte) {
+    if ((leadByte & 0x80) == 0x00) return 1;  // 0xxxxxxx — ASCII
+    if ((leadByte & 0xE0) == 0xC0) return 2;  // 110xxxxx — напр. кириллица
+    if ((leadByte & 0xF0) == 0xE0) return 3;  // 1110xxxx
+    if ((leadByte & 0xF8) == 0xF0) return 4;  // 11110xxx
+    return 1;  // некорректный байт — считаем как одиночный, чтобы не зависнуть
+}
+}
+
 void FileReaderApp::SetFile(const String& value) {
     filename = value;
 }
@@ -10,21 +20,33 @@ void FileReaderApp::SetFile(const String& value) {
 void FileReaderApp::splitLines(const String& text) {
     lines.clear();
     String temp;
+    int charsInLine = 0;
 
-    for (int i = 0; i < text.length(); ++i) {
-        char c = text[i];
+    int i = 0;
+    int len = text.length();
+
+    while (i < len) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
 
         if (c == '\n') {
             lines.push_back(temp);
             temp = "";
+            charsInLine = 0;
+            i++;
             continue;
         }
 
-        temp += c;
+        int charLen = utf8CharLen(c);
+        if (i + charLen > len) charLen = len - i;  // защита от обрезанного файла
 
-        if (temp.length() >= displayTextCharsPerLine) {
+        temp += text.substring(i, i + charLen);
+        charsInLine++;
+        i += charLen;
+
+        if (charsInLine >= displayTextCharsPerLine) {
             lines.push_back(temp);
             temp = "";
+            charsInLine = 0;
         }
     }
 
