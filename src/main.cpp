@@ -16,6 +16,7 @@
 #include "apps/calc/calc.h"
 #include "apps/world_3d/world_3d.h"
 #include "apps/settings/settings.h"
+#include "apps/timer/timer.h"
 
 
 struct AppSlot {
@@ -45,6 +46,7 @@ AppSlot appSlots[] = {
   MakeAppSlot<CalcApp>(),
   MakeAppSlot<World3DApp>(),
   MakeAppSlot<SettingsApp>(),
+  MakeAppSlot<TimerApp>(),
 };
 const byte appCount = sizeof(appSlots) / sizeof(appSlots[0]);
 
