@@ -17,12 +17,13 @@ public:
 
 private:
     void splitLines(const String& text);
-    void renderPage();
+    void renderStep();
 
     String filename;
     String fileContent;
     std::vector<String> lines;
     int currentLine = 0;
+    int drawLine = 0;
     int maxScroll = 0;
     bool opened = false;
 };

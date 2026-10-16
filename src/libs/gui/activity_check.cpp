@@ -10,7 +10,7 @@ void drawIdleTimerBar() {
   float progress = 1.0 - (float)elapsed / timeout;
   if (progress < 0.0) progress = 0.0;
 
-  displayProgressBar(progress);
+  GUI::progressBar(progress);
 }
 
 bool anyButtonPressed() {

@@ -114,11 +114,11 @@ void CalcApp::updateScreen() {
         if (op != "") expr += " " + op + " " + secondinp;
     }
 
-    displayList(expr.c_str(), keyboardData, selectedIndex, false);
+    GUI::list(expr.c_str(), keyboardData, selectedIndex, false);
 }
 
 bool CalcApp::Loop() {
-    int newIndex = updateMenuSelection(selectedIndex, (int)keyboardData.size(), 150);
+    int newIndex = GUI::GUI::updateMenuSelection(selectedIndex, (int)keyboardData.size(), 150);
     bool redraw = false;
 
     if (newIndex != selectedIndex) {

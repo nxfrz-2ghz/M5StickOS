@@ -43,7 +43,7 @@ void FileReaderApp::splitLines(const String& text) {
         charsInLine++;
         i += charLen;
 
-        if (charsInLine >= displayTextCharsPerLine) {
+        if (charsInLine >= GUI::textCharsPerLine) {
             lines.push_back(temp);
             temp = "";
             charsInLine = 0;
@@ -54,26 +54,23 @@ void FileReaderApp::splitLines(const String& text) {
         lines.push_back(temp);
     }
 
-    maxScroll = static_cast<int>(lines.size()) - displayTextLinesPerPage;
+    maxScroll = static_cast<int>(lines.size()) - GUI::textLinesPerPage;
     if (maxScroll < 0) {
         maxScroll = 0;
     }
 }
 
-void FileReaderApp::renderPage() {
-    String output;
-    int endLine = currentLine + displayTextLinesPerPage;
+void FileReaderApp::renderStep() {
+    if (drawLine >= GUI::textLinesPerPage) return;
 
-    if (endLine > static_cast<int>(lines.size())) {
-        endLine = lines.size();
+    int targetLine = currentLine + drawLine;
+    if (targetLine < static_cast<int>(lines.size())) {
+        GUI::line(lines[targetLine].c_str(), drawLine);
+    } else {
+        GUI::line("", drawLine);
     }
-
-    for (int i = currentLine; i < endLine; i++) {
-        output += lines[i];
-        output += '\n';
-    }
-
-    displayText(output.c_str());
+    
+    drawLine++;
 }
 
 void FileReaderApp::Setup() {
@@ -81,13 +78,14 @@ void FileReaderApp::Setup() {
     fileContent = "";
     lines.clear();
     currentLine = 0;
+    drawLine = 0;
     maxScroll = 0;
 
     String path = filename.startsWith("/") ? filename : "/" + filename;
     File file = LittleFS.open(path, FILE_READ);
 
     if (!file) {
-        displayText("Error:\nCan't open file");
+        GUI::text("Error:\nCan't open file");
         delay(1500);
         return;
     }
@@ -100,7 +98,6 @@ void FileReaderApp::Setup() {
 
     splitLines(fileContent);
     opened = true;
-    renderPage();
 }
 
 bool FileReaderApp::Loop() {
@@ -109,12 +106,13 @@ bool FileReaderApp::Loop() {
     }
 
     int oldLine = currentLine;
-    currentLine = updateMenuSelection(currentLine, maxScroll + 1);
+    currentLine = GUI::GUI::updateMenuSelection(currentLine, maxScroll + 1);
 
     if (oldLine != currentLine) {
-        renderPage();
+        drawLine = 0;
     }
 
+    renderStep();
     return true;
 }
 
@@ -122,6 +120,7 @@ void FileReaderApp::Exit() {
     fileContent = "";
     lines.clear();
     currentLine = 0;
+    drawLine = 0;
     maxScroll = 0;
     opened = false;
 }

@@ -28,14 +28,12 @@ void SettingsApp::renderPage() {
         displayLines.push_back(line);
     }
 
-    // Same navigation model as FileManager: selectedIndex is the absolute
-    // index, while GUI::displayList() chooses the visible portion.
-    displayList("--- SETTINGS ---", displayLines, selectedIndex, true);
+    GUI::list("--- SETTINGS ---", displayLines, selectedIndex, true);
 }
 
 void SettingsApp::Setup() {
     selectedIndex = 0;
-    displayClear();
+    GUI::clear();
     renderPage();
 }
 
@@ -45,7 +43,7 @@ bool SettingsApp::Loop() {
     }
 
     const byte oldIndex = selectedIndex;
-    selectedIndex = updateMenuSelection(selectedIndex, settingsCount);
+    selectedIndex = GUI::updateMenuSelection(selectedIndex, settingsCount);
 
     if (oldIndex != selectedIndex) {
         renderPage();

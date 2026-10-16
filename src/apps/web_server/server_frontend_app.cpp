@@ -26,7 +26,7 @@ void ServerFrontendApp::render() {
     auto* backend = static_cast<ServerBackendTask*>(TaskManager::Instance().Find("Server"));
     String text = backend ? backend->StatusText() : "Server stopped";
     if (text != lastRendered) {
-        displayText(text.c_str());
+        GUI::text(text.c_str());
         lastRendered = text;
     }
 }
@@ -51,7 +51,7 @@ bool ServerFrontendApp::Loop() {
     if (StickCP2.BtnPWR.wasPressed()) {
         // А это — настоящее выключение сервера, а не просто выход с экрана.
         TaskManager::Instance().Stop("Server");
-        displayText("WiFi OFF");
+        GUI::text("WiFi OFF");
         delay(300);
         return false;
     }

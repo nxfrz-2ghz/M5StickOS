@@ -114,10 +114,10 @@ void FileManagerApp::displayUI() {
             }
         }
 
-        displayList("--- Files ---", displayNames, selectedIndex);
+        GUI::list("--- Files ---", displayNames, selectedIndex);
     } else {
         updateOptions();
-        displayList("Actions:", options, optionIndex);
+        GUI::list("Actions:", options, optionIndex);
     }
 }
 
@@ -151,13 +151,13 @@ void FileManagerApp::handleAction() {
         bool ok = entry.isDir ? removeRecursive(fullPath) : LittleFS.remove(fullPath);
 
         if (ok) {
-            displayText(entry.isDir ? "Folder deleted!" : "Deleted!");
+            GUI::text(entry.isDir ? "Folder deleted!" : "Deleted!");
             updateFilesArray(currentPath);
             if (selectedIndex >= static_cast<int>(filesList.size())) {
                 selectedIndex = filesList.empty() ? 0 : static_cast<int>(filesList.size()) - 1;
             }
         } else {
-            displayText("Error delete");
+            GUI::text("Error delete");
         }
         delay(1000);
     }
@@ -186,7 +186,7 @@ const char* FileManagerApp::StartPrompt() {
 
 void FileManagerApp::Setup() {
     if (!LittleFS.begin(true)) {
-        displayText("FS Mount Failed");
+        GUI::text("FS Mount Failed");
         return;
     }
     currentPath = "/";
@@ -221,7 +221,7 @@ bool FileManagerApp::Loop() {
 
         if (!filesList.empty()) {
             int lastIndex = selectedIndex;
-            selectedIndex = updateMenuSelection(selectedIndex, filesList.size());
+            selectedIndex = GUI::GUI::updateMenuSelection(selectedIndex, filesList.size());
 
             if (lastIndex != selectedIndex) {
                 displayUI();
@@ -229,7 +229,7 @@ bool FileManagerApp::Loop() {
         }
     } else if (currentState == FILE_OPTIONS) {
         int lastIndex = optionIndex;
-        optionIndex = updateMenuSelection(optionIndex, options.size());
+        optionIndex = GUI::GUI::updateMenuSelection(optionIndex, options.size());
 
         if (lastIndex != optionIndex) {
             displayUI();

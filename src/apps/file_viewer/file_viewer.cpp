@@ -150,12 +150,12 @@ void FileViewerApp::Setup() {
     File imageFile = LittleFS.open(path, FILE_READ);
 
     if (!imageFile) {
-        displayText("Error:\nCan't open file");
+        GUI::text("Error:\nCan't open file");
         delay(1500);
         return;
     }
 
-    displayText("Loading image...");
+    GUI::text("Loading image...");
 
     int32_t bmpW = 0;
     int32_t bmpH = 0;
@@ -169,7 +169,7 @@ void FileViewerApp::Setup() {
     imageFile.seek(0);
 
     if (!loadAndRenderBmp(imageFile)) {
-        displayText("Unsupported\nimage format");
+        GUI::text("Unsupported\nimage format");
         delay(1500);
         imageFile.close();
         StickCP2.Display.setRotation(originalRotation);

@@ -130,8 +130,8 @@ void TvbGoneApp::displayProgress() const {
     } else {
       snprintf(buf, sizeof(buf), "Done: %u/%u", currentIndex, totalCodes);
     }
-    displayBigText(buf);
-    displayProgressBar((float)currentIndex / totalCodes, 10);
+    GUI::bigText(buf);
+    GUI::progressBar((float)currentIndex / totalCodes, 10);
 }
 
 void TvbGoneApp::Setup() {
@@ -149,8 +149,8 @@ void TvbGoneApp::Setup() {
 
 bool TvbGoneApp::Loop() {
     if (StickCP2.BtnPWR.wasPressed()) {
-      displayClear();
-      displayBigText("CANCELED!");
+      GUI::clear();
+      GUI::bigText("CANCELED!");
       delay(300);
       finished = true;
       return false;

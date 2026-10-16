@@ -82,7 +82,7 @@ void handleLauncher() {
   if (appRunning) {
     if (!slot.active->Loop()) {
       StickCP2.update();
-      displayClear();
+      GUI::clear();
       updateActivity();
       slot.active->Exit();
       delete slot.active;
@@ -99,10 +99,10 @@ void handleLauncher() {
   }
 
   // Приложение ещё не запущено: показываем приглашение и ждём BtnA.
-  displayBigText(slot.startPrompt());
+  GUI::bigText(slot.startPrompt());
   if (StickCP2.BtnA.wasPressed()) {
-    displayClear();
-    displayBigText("work...");
+    GUI::clear();
+    GUI::bigText("work...");
     slot.active = slot.create();
     slot.active->Setup();
     appRunning = true;
@@ -143,6 +143,6 @@ void loop() {
      }
   }
   else {
-    selectedIndex = updateMenuSelection(selectedIndex, appCount);
+    selectedIndex = GUI::updateMenuSelection(selectedIndex, appCount);
   }
 }

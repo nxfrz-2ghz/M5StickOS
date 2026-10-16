@@ -58,7 +58,7 @@ void TimerApp::Setup() {
     micReady = false;
     micReadyAt = 0;
 
-    displayClear();
+    GUI::clear();
 }
 
 void TimerApp::Exit() {
@@ -101,7 +101,7 @@ void TimerApp::handleButtons() {
     }
 
 
-    int newLevel = updateMenuSelection(soundLevel, kMaxLevel + 1, 150);
+    int newLevel = GUI::GUI::updateMenuSelection(soundLevel, kMaxLevel + 1, 150);
     if (newLevel != soundLevel) {
         soundLevel = newLevel;
         syncMicPower();
@@ -199,7 +199,7 @@ void TimerApp::render() {
     StickCP2.Display.endWrite();
 
     if (soundLevel != drawnSoundLevel) {
-        displayProgressBar((float)soundLevel / (float)kMaxLevel, 6);
+        GUI::progressBar((float)soundLevel / (float)kMaxLevel, 6);
         drawnSoundLevel = soundLevel;
     }
 }
