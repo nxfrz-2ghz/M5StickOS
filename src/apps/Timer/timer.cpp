@@ -36,14 +36,14 @@ float TimerApp::soundThreshold() const {
 }
 
 String TimerApp::formatElapsed(unsigned long ms) const {
-    unsigned long totalTenths = ms / 100;
-    unsigned long tenths = totalTenths % 10;
-    unsigned long totalSeconds = totalTenths / 10;
+    unsigned long totalTenths = ms / 10;
+    unsigned long tenths = totalTenths % 100;
+    unsigned long totalSeconds = totalTenths / 100;
     unsigned long seconds = totalSeconds % 60;
     unsigned long minutes = totalSeconds / 60;
 
     char buf[16];
-    snprintf(buf, sizeof(buf), "%02lu:%02lu.%lu", minutes, seconds, tenths);
+    snprintf(buf, sizeof(buf), "%02lu:%02lu.%02lu", minutes, seconds, tenths);
     return String(buf);
 }
 

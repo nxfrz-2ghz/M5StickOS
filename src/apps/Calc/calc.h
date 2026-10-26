@@ -14,24 +14,32 @@ private:
     void reset();
     void updateScreen();
     void applyKey(char key);
+    void applyUnary(char key);
     void calculateResult();
     String trimNumber(float value);
+    bool runFunction(int index);
+
+    static const unsigned long DOUBLE_PRESS_MS = 500;
 
     std::vector<String> keyboardData = {
-        "9", "8", "7", "6", "5", "4", "3", "2", "1", "0",
-        "=", "<", ".", "!", "+", "-", "*", "/", "^", "Q",
-        "M", "R", "E"
+        "= | 0", "< | 1", ". | 2", "! | 3", "+ | 4", "- | 5", "* | 6",
+        "/ | 7", "^ | 8", "Q | 9", "M | sin", "R | cos", "E | tg"
     };
 
-    int selectedIndex = 10; // "="
+    int selectedIndex = 0; // "="
     int lastIndex = -1;
 
-    bool numnum = false;  // ввод первого или второго числа
+    // Отложенное одиночное нажатие
+    bool pending = false;
+    unsigned long pendingTime = 0;
+    int pendingIndex = 0;
+
+    bool isSecond = false;
     bool showingResult = false;
     bool hasError = false;
 
-    String firstinp = "0";
-    String secondinp = "0";
+    String fisrtInp = "0";
+    String secondInp = "0";
     String op = "";
-    float result = 0;
+    double result = 0;
 };
