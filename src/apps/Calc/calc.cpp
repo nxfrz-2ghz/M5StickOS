@@ -8,6 +8,47 @@ namespace {
     const char DIGIT_KEYS[13] = {
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'S', 'C', 'T'
     };
+
+    double fSqrt(double x) { return x < 0 ? NAN : sqrt(x); }
+    double fSin (double x) { return sin(x); }
+    double fCos (double x) { return cos(x); }
+    double fTan (double x) { double t = tan(x); return fabs(t) > 1e9 ? NAN : t; }
+
+    double fAdd(double a, double b) { return a + b; }
+    double fSub(double a, double b) { return a - b; }
+    double fMul(double a, double b) { return a * b; }
+    double fDiv(double a, double b) { return b == 0 ? NAN : a / b; }
+    double fPow(double a, double b) { return pow(a, b); }
+
+    enum : uint8_t {
+        K_UNARY  = 1 << 0,
+        K_BINARY = 1 << 1,
+        K_DEG    = 1 << 2,
+    };
+
+    struct KeyInfo {
+        char key;
+        uint8_t flags;
+        double (*un)(double);
+        double (*bin)(double, double);
+    };
+
+    const KeyInfo KEYS[] = {
+        {'Q', K_UNARY,         fSqrt, nullptr},
+        {'S', K_UNARY | K_DEG, fSin,  nullptr},
+        {'C', K_UNARY | K_DEG, fCos,  nullptr},
+        {'T', K_UNARY | K_DEG, fTan,  nullptr},
+        {'+', K_BINARY, nullptr, fAdd},
+        {'-', K_BINARY, nullptr, fSub},
+        {'*', K_BINARY, nullptr, fMul},
+        {'/', K_BINARY, nullptr, fDiv},
+        {'^', K_BINARY, nullptr, fPow},
+    };
+
+    const KeyInfo* findKey(char k) {
+        for (const auto &e : KEYS) if (e.key == k) return &e;
+        return nullptr;
+    }
 }
 
 void CalcApp::reset() {
@@ -16,7 +57,7 @@ void CalcApp::reset() {
     hasError = false;
     fisrtInp = "0";
     secondInp = "0";
-    op = "";
+    op = 0;
     result = 0;
 }
 
@@ -30,136 +71,75 @@ String CalcApp::trimNumber(float value) {
     return s;
 }
 
-void CalcApp::calculateResult() {
-    float a = fisrtInp.toDouble();
-    float b = secondInp.toDouble();
-    hasError = false;
-
-    if (op == "+") result = a + b;
-    else if (op == "-") result = a - b;
-    else if (op == "*") result = a * b;
-    else if (op == "/") {
-        if (b == 0) hasError = true;
-        else result = a / b;
-    }
-    else if (op == "^") result = pow(a, b);
-
-    showingResult = true;
-}
-
-void CalcApp::applyUnary(char key) {
-    String &cur = isSecond ? secondInp : fisrtInp;
-    double rad = cur.toDouble() * DEG_TO_RAD;
-    double v = 0;
-
-    if (key == 'S') {
-        v = sin(rad);
-    } else if (key == 'C') {
-        v = cos(rad);
-    } else { // 'T'
-        double c = cos(rad);
-        if (fabs(c) < 1e-9) {
-            hasError = true;
-            showingResult = true;
-            return;
-        }
-        v = sin(rad) / c;
-    }
-
-    cur = trimNumber((float)v);
-}
 
 void CalcApp::applyKey(char key) {
-    // После показа результата любая цифра/оператор начинают новый ввод
-    if (showingResult && key != 'R' && key != 'M') {
-        bool isOperator = (key=='+' || key=='-' || key=='*' || key=='/' || key=='^' || key=='Q');
-        bool isUnary = (key=='S' || key=='C' || key=='T');
+    const KeyInfo* k = findKey(key);
+    const uint8_t fl = k ? k->flags : 0;
 
-        if (isOperator) {
+    if (showingResult && key != 'R' && key != 'M') {
+        if (fl & (K_UNARY | K_BINARY)) {
             fisrtInp = hasError ? "0" : trimNumber(result);
             secondInp = "0";
-            op = String(key);
-            isSecond = true;
-            showingResult = false;
-            hasError = false;
-            return;
-        } else if (isUnary) {
-            // sin/cos/tg применяются к результату
-            fisrtInp = hasError ? "0" : trimNumber(result);
-            secondInp = "0";
-            op = "";
-            isSecond = false;
-            showingResult = false;
-            hasError = false;
-            // и продолжаем обработку ниже
+            op = (fl & K_BINARY) ? key : 0;
+            isSecond = (fl & K_BINARY);
+            showingResult = hasError = false;
+            if (fl & K_BINARY) return;
         } else {
-            reset(); // и продолжаем обработку ниже как обычный ввод
+            reset();
         }
     }
 
+    if (fl & K_UNARY) { applyUnary(key); return; }
+
+    if (fl & K_BINARY) {
+        if (secondInp != "0") { calculateResult(); showingResult = false; }
+        op = key;
+        isSecond = true;
+        return;
+    }
+
+    String &cur = isSecond ? secondInp : fisrtInp;
+
     switch (key) {
-        case 'R':
-            reset();
-            break;
-
-        case 'M': {
-            String val = trimNumber(result);
-            if (!isSecond) fisrtInp = val; else secondInp = val;
-            break;
-        }
-
-        case '!': {
-            String &cur = isSecond ? secondInp : fisrtInp;
+        case 'R': reset(); break;
+        case 'M': cur = trimNumber(result); break;
+        case '=': if (op) calculateResult(); break;
+        case '!':
             if (cur.startsWith("-")) cur.remove(0, 1);
             else if (cur != "0") cur = "-" + cur;
             break;
-        }
-
-        case '<': {
-            String &cur = isSecond ? secondInp : fisrtInp;
-            if (cur.length() > 1) {
-                cur.remove(cur.length() - 1);
-            } else {
-                cur = "0";
-                // Если второе число пустое — стираем знак
-                if (isSecond) { isSecond = false; op = ""; }
-            }
-            break;
-        }
-
-        case '.': {
-            String &cur = isSecond ? secondInp : fisrtInp;
+        case '.':
             if (cur.indexOf('.') == -1) cur += ".";
             break;
-        }
-
-        case '=':
-            if (op != "") calculateResult();
+        case '<':
+            if (cur.length() > 1) cur.remove(cur.length() - 1);
+            else { cur = "0"; if (isSecond) { isSecond = false; op = 0; } }
             break;
-
-        case 'S': case 'C': case 'T':
-            applyUnary(key);
-            break;
-
-        case '+': case '-': case '*': case '/': case '^': case 'Q':
-            // Если второе число введено — выполняем = и добавляем знак
-            if (secondInp != "0") {
-                calculateResult();
-                showingResult = false;
-            }
-            op = String(key);
-            isSecond = true;
-            break;
-
-        default: // цифры 0-9
+        default:
             if (key >= '0' && key <= '9') {
-                String &cur = isSecond ? secondInp : fisrtInp;
-                if (cur == "0") cur = String(key);
-                else cur += key;
+                if (cur == "0") cur = String(key); else cur += key;
             }
-            break;
     }
 }
+
+void CalcApp::applyUnary(char key) { // for unary
+    const KeyInfo* k = findKey(key);
+    if (!k || !k->un) return;
+    String &cur = isSecond ? secondInp : fisrtInp;
+    double x = cur.toDouble();
+    if (k->flags & K_DEG) x *= DEG_TO_RAD;
+    double v = k->un(x);
+    if (isnan(v)) { hasError = true; showingResult = true; return; }
+    cur = trimNumber((float)v);
+}
+
+void CalcApp::calculateResult() { // for binary
+    const KeyInfo* k = findKey(op);
+    double r = k->bin(fisrtInp.toDouble(), secondInp.toDouble());
+    if (isnan(r)) hasError = true; else result = (float)r;
+    showingResult = true;
+}
+
 
 void CalcApp::updateScreen() {
     String expr;
@@ -167,7 +147,7 @@ void CalcApp::updateScreen() {
         expr = hasError ? "Error" : ("= " + trimNumber(result));
     } else {
         expr = fisrtInp;
-        if (op != "") expr += " " + op + " " + secondInp;
+        if (op) expr += " " + op; expr += " " + secondInp;
     }
 
     GUI::list(expr.c_str(), keyboardData, selectedIndex, false);
@@ -192,6 +172,7 @@ bool CalcApp::runFunction(int index) {
     applyKey(key);
     return true;
 }
+
 
 bool CalcApp::Loop() {
     const int count = (int)keyboardData.size();

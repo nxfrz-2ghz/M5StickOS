@@ -1,8 +1,6 @@
 #pragma once
 
 #include "../app.h"
-#include <vector>
-#include <Arduino.h>
 
 class CalcApp : public App {
 public:
@@ -13,9 +11,11 @@ public:
 private:
     void reset();
     void updateScreen();
+    
     void applyKey(char key);
     void applyUnary(char key);
     void calculateResult();
+    
     String trimNumber(float value);
     bool runFunction(int index);
 
@@ -40,6 +40,6 @@ private:
 
     String fisrtInp = "0";
     String secondInp = "0";
-    String op = "";
+    char op = 0;
     double result = 0;
 };
