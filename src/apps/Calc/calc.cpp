@@ -147,7 +147,7 @@ void CalcApp::updateScreen() {
         expr = hasError ? "Error" : ("= " + trimNumber(result));
     } else {
         expr = fisrtInp;
-        if (op) expr += " " + op; expr += " " + secondInp;
+        if (op) expr = expr + " " + op + " " + secondInp;
     }
 
     GUI::list(expr.c_str(), keyboardData, selectedIndex, false);
